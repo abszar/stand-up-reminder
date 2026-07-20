@@ -5,7 +5,8 @@
 Build and install a lightweight native desktop application that prompts the
 user to stand for two minutes after every 30 minutes of normal use. The
 application must integrate with the Ubuntu GNOME top bar, start automatically
-with each graphical login, and remain easy to stop deliberately.
+with each graphical login, remain easy to stop deliberately, and let the user
+restart the work interval after returning from a longer break.
 
 ## Platform and constraints
 
@@ -31,7 +32,8 @@ units:
    only when the countdown reaches zero or the whole application is explicitly
    quit from the indicator.
 3. **Top-bar indicator:** reports time until the next break and offers Start
-   break now, the sleep/lock timing policy, and Quit.
+   break now, a long-break return reset, the sleep/lock timing policy, and
+   Quit.
 
 A small coordinator connects these units to GTK/GLib timers and GNOME session
 lock events. User settings are stored in a JSON file below the XDG config
@@ -55,6 +57,13 @@ stop the application even during a break.
 The indicator's next-break label is updated during the work phase. While a
 break is active, it reports that the break is in progress and disables the
 manual-start command to prevent overlapping breaks.
+
+Selecting **I'm back — restart 30-minute timer** during the work phase replaces
+the partially elapsed work deadline with a fresh 30-minute interval. This is
+intended for returning after a break that lasted longer than the enforced
+two-minute countdown. Repeated selections always reset to a new full interval.
+The action is disabled while the enforced break window is active so it cannot
+be used to dismiss that window.
 
 ## Sleep and lock policy
 
@@ -94,6 +103,7 @@ The always-visible GNOME top-bar indicator opens a compact menu containing:
 - a disabled status row showing the next break countdown or “Break in
   progress”;
 - **Start break now**;
+- **I'm back — restart 30-minute timer**, enabled only during the work phase;
 - a sleep/lock timing submenu with **Active time only** and **Wall-clock
   time**;
 - **Quit**.
@@ -128,6 +138,8 @@ Automated tests cover the scheduler separately from the graphical interface:
 - duplicate manual-start prevention;
 - active-time pause/resume across locking;
 - wall-clock overdue behavior after unlock or resume;
+- long-break return resets after partially elapsed work intervals;
+- repeated long-break return resets and exact-deadline behavior;
 - policy changes preserving remaining time;
 - malformed settings fallback.
 
@@ -143,5 +155,6 @@ window controls, and followed by a newly reset work interval.
 - Snoozing or dismissing an active break through normal window controls.
 - Usage statistics, accounts, cloud synchronization, sounds, and mobile
   notifications.
+- Automatic detection of long breaks or idle periods.
 - Supporting desktop environments other than the installed Ubuntu GNOME/X11
   session.
