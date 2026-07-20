@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Sequence
 
@@ -29,6 +30,26 @@ def format_duration(seconds: int) -> str:
     return f"{minutes:02d}:{remainder:02d}"
 
 
+@dataclass(frozen=True)
+class BreakView:
+    title: str
+    countdown: str
+    away: str
+    can_return: bool
+
+
+def break_view(
+    phase: Phase, seconds_remaining: int, away_seconds: int
+) -> BreakView:
+    awaiting = phase is Phase.AWAITING_RETURN
+    return BreakView(
+        title="Break complete" if awaiting else "Time to stand up",
+        countdown=format_duration(seconds_remaining),
+        away=f"Away for {format_duration(away_seconds)}",
+        can_return=awaiting,
+    )
+
+
 def break_progress_fraction(seconds: int, total_seconds: int) -> float:
     if total_seconds <= 0:
         return 0.0
@@ -36,11 +57,13 @@ def break_progress_fraction(seconds: int, total_seconds: int) -> float:
 
 
 class BreakWindow(Gtk.ApplicationWindow):
-    def __init__(self, application: Gtk.Application, break_seconds: int) -> None:
+    def __init__(
+        self, application: Gtk.Application, break_seconds: int, on_return
+    ) -> None:
         super().__init__(application=application, title="Time to stand up")
         self.break_seconds = break_seconds
         self.set_role("stand-up-break")
-        self.set_default_size(440, 270)
+        self.set_default_size(440, 350)
         self.set_resizable(False)
         self.set_decorated(False)
         self.set_position(Gtk.WindowPosition.CENTER_ALWAYS)
@@ -58,27 +81,42 @@ class BreakWindow(Gtk.ApplicationWindow):
         card.set_border_width(30)
         card.get_style_context().add_class("break-card")
 
-        eyebrow = Gtk.Label(label="STAND  /  MOVE")
-        eyebrow.set_xalign(0.0)
-        eyebrow.get_style_context().add_class("break-eyebrow")
+        self.eyebrow = Gtk.Label(label="TIME TO STAND UP")
+        self.eyebrow.set_xalign(0.0)
+        self.eyebrow.get_style_context().add_class("break-eyebrow")
 
         self.countdown = Gtk.Label(label=format_duration(break_seconds))
         self.countdown.set_xalign(0.0)
         self.countdown.get_style_context().add_class("break-countdown")
 
+        self.away = Gtk.Label(label="Away for 00:00")
+        self.away.set_xalign(0.0)
+        self.away.get_style_context().add_class("break-away")
+
         self.progress = Gtk.ProgressBar()
         self.progress.set_fraction(1.0)
         self.progress.get_style_context().add_class("break-progress")
 
-        prompt = Gtk.Label(label="Stand tall. Let your shoulders drop. Take a few steps.")
+        prompt = Gtk.Label(
+            label="Stand tall. Let your shoulders drop. Take a few steps."
+        )
         prompt.set_xalign(0.0)
         prompt.set_line_wrap(True)
         prompt.get_style_context().add_class("break-prompt")
 
-        card.pack_start(eyebrow, False, False, 0)
+        self.return_button = Gtk.Button(
+            label="I'm back \u2014 start 30-minute timer"
+        )
+        self.return_button.set_no_show_all(True)
+        self.return_button.get_style_context().add_class("break-return")
+        self.return_button.connect("clicked", on_return)
+
+        card.pack_start(self.eyebrow, False, False, 0)
         card.pack_start(self.countdown, True, True, 0)
+        card.pack_start(self.away, False, False, 0)
         card.pack_start(self.progress, False, False, 2)
         card.pack_start(prompt, False, False, 0)
+        card.pack_start(self.return_button, False, False, 0)
         self.add(card)
 
     @staticmethod
@@ -89,11 +127,18 @@ class BreakWindow(Gtk.ApplicationWindow):
     def _ignore_key(_window, event) -> bool:
         return event.keyval == Gdk.KEY_Escape
 
-    def set_seconds(self, seconds: int) -> None:
-        self.countdown.set_text(format_duration(seconds))
+    def update_state(
+        self, phase: Phase, seconds_remaining: int, away_seconds: int
+    ) -> None:
+        view = break_view(phase, seconds_remaining, away_seconds)
+        self.set_title(view.title)
+        self.eyebrow.set_text(view.title.upper())
+        self.countdown.set_text(view.countdown)
+        self.away.set_text(view.away)
         self.progress.set_fraction(
-            break_progress_fraction(seconds, self.break_seconds)
+            break_progress_fraction(seconds_remaining, self.break_seconds)
         )
+        self.return_button.set_visible(view.can_return)
 
     def enforce_front(self) -> None:
         self.set_keep_above(True)
@@ -142,6 +187,21 @@ class ReminderApplication(Gtk.Application):
                 font-size: 74px;
                 font-weight: 700;
             }
+            .break-away {
+                color: #c9ddd5;
+                font-family: "DejaVu Sans Mono", monospace;
+                font-size: 16px;
+                font-weight: 600;
+            }
+            button.break-return {
+                min-height: 38px;
+                border-radius: 6px;
+                color: #18312e;
+                background-color: #f2a65a;
+                font-family: Cantarell, sans-serif;
+                font-size: 15px;
+                font-weight: 700;
+            }
             .break-prompt {
                 color: #c9ddd5;
                 font-family: Cantarell, sans-serif;
@@ -170,7 +230,10 @@ class ReminderApplication(Gtk.Application):
 
     def do_activate(self) -> None:
         if self._started:
-            if self.scheduler and self.scheduler.snapshot().phase is Phase.BREAK:
+            if self.scheduler and self.scheduler.snapshot().phase in (
+                Phase.BREAK,
+                Phase.AWAITING_RETURN,
+            ):
                 self._show_break()
             return
 
@@ -210,7 +273,7 @@ class ReminderApplication(Gtk.Application):
             break_seconds=break_seconds,
             mode=settings.mode,
         )
-        self.window = BreakWindow(self, int(break_seconds))
+        self.window = BreakWindow(self, int(break_seconds), self._confirm_return)
         self._build_indicator(settings.mode)
         self._connect_lock_monitor()
         GLib.timeout_add(250, self._tick)
@@ -306,7 +369,8 @@ class ReminderApplication(Gtk.Application):
         if (
             not locked
             and transition is not Transition.START_BREAK
-            and self.scheduler.snapshot().phase is Phase.BREAK
+            and self.scheduler.snapshot().phase
+            in (Phase.BREAK, Phase.AWAITING_RETURN)
         ):
             self._show_break()
         self._update_interface()
@@ -327,7 +391,11 @@ class ReminderApplication(Gtk.Application):
         snapshot = self.scheduler.snapshot()
         if snapshot.locked:
             return
-        self.window.set_seconds(snapshot.seconds_remaining)
+        self.window.update_state(
+            snapshot.phase,
+            snapshot.seconds_remaining,
+            snapshot.away_seconds,
+        )
         self.window.show_all()
         self.window.enforce_front()
 
@@ -337,9 +405,12 @@ class ReminderApplication(Gtk.Application):
             self.status_item.set_label("Break in progress")
             self.start_item.set_sensitive(False)
             self.reset_item.set_sensitive(False)
-            if not snapshot.locked:
-                self.window.set_seconds(snapshot.seconds_remaining)
-                self.window.set_keep_above(True)
+        elif snapshot.phase is Phase.AWAITING_RETURN:
+            self.status_item.set_label(
+                f"Away for {format_duration(snapshot.away_seconds)}"
+            )
+            self.start_item.set_sensitive(False)
+            self.reset_item.set_sensitive(True)
         else:
             self.status_item.set_label(
                 f"Next break in {format_duration(snapshot.seconds_remaining)}"
@@ -347,12 +418,32 @@ class ReminderApplication(Gtk.Application):
             self.start_item.set_sensitive(True)
             self.reset_item.set_sensitive(True)
 
+        if (
+            snapshot.phase in (Phase.BREAK, Phase.AWAITING_RETURN)
+            and not snapshot.locked
+        ):
+            self.window.update_state(
+                snapshot.phase,
+                snapshot.seconds_remaining,
+                snapshot.away_seconds,
+            )
+            self.window.set_keep_above(True)
+
     def _start_break_now(self, _item) -> None:
         self._apply_transition(self.scheduler.start_break())
         self._update_interface()
 
+    def _confirm_return(self, _button) -> None:
+        self._apply_transition(self.scheduler.confirm_return())
+        self._update_interface()
+
     def _reset_work_interval(self, _item) -> None:
+        was_awaiting = (
+            self.scheduler.snapshot().phase is Phase.AWAITING_RETURN
+        )
         if self.scheduler.reset_work_interval():
+            if was_awaiting and self.window:
+                self.window.hide()
             self._update_interface()
 
     def _timing_mode_changed(self, item, mode: TimingMode) -> None:
