@@ -1,4 +1,6 @@
 import unittest
+from types import SimpleNamespace
+from unittest.mock import Mock
 
 from stand_up_reminder import application
 
@@ -80,6 +82,51 @@ class IndicatorViewTests(unittest.TestCase):
         self.assertEqual(view.status, "Away for 15:00")
         self.assertFalse(view.can_start_break)
         self.assertTrue(view.can_reset_work)
+
+
+class BreakActionCoordinatorTests(unittest.TestCase):
+    def make_coordinator(self):
+        return SimpleNamespace(
+            scheduler=Mock(),
+            window=Mock(),
+            _update_interface=Mock(),
+        )
+
+    def test_successful_snooze_hides_popup_and_refreshes(self):
+        coordinator = self.make_coordinator()
+        coordinator.scheduler.snooze_break.return_value = True
+
+        application.ReminderApplication._snooze_break(coordinator, None)
+
+        coordinator.window.hide.assert_called_once_with()
+        coordinator._update_interface.assert_called_once_with()
+
+    def test_rejected_snooze_keeps_popup_visible_and_refreshes(self):
+        coordinator = self.make_coordinator()
+        coordinator.scheduler.snooze_break.return_value = False
+
+        application.ReminderApplication._snooze_break(coordinator, None)
+
+        coordinator.window.hide.assert_not_called()
+        coordinator._update_interface.assert_called_once_with()
+
+    def test_successful_skip_hides_popup_and_refreshes(self):
+        coordinator = self.make_coordinator()
+        coordinator.scheduler.skip_break.return_value = True
+
+        application.ReminderApplication._skip_break(coordinator, None)
+
+        coordinator.window.hide.assert_called_once_with()
+        coordinator._update_interface.assert_called_once_with()
+
+    def test_rejected_skip_keeps_popup_visible_and_refreshes(self):
+        coordinator = self.make_coordinator()
+        coordinator.scheduler.skip_break.return_value = False
+
+        application.ReminderApplication._skip_break(coordinator, None)
+
+        coordinator.window.hide.assert_not_called()
+        coordinator._update_interface.assert_called_once_with()
 
 if __name__ == "__main__":
     unittest.main()

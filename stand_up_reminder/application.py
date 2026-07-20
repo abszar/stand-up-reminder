@@ -22,6 +22,7 @@ APP_NAME = "Stand Up Reminder"
 ICON_NAME = "stand-up-reminder-symbolic"
 DEFAULT_WORK_SECONDS = 30 * 60
 DEFAULT_BREAK_SECONDS = 2 * 60
+DEFAULT_SNOOZE_SECONDS = 5 * 60
 
 
 def format_duration(seconds: int) -> str:
@@ -90,7 +91,12 @@ def break_progress_fraction(seconds: int, total_seconds: int) -> float:
 
 class BreakWindow(Gtk.ApplicationWindow):
     def __init__(
-        self, application: Gtk.Application, break_seconds: int, on_return
+        self,
+        application: Gtk.Application,
+        break_seconds: int,
+        on_snooze,
+        on_skip,
+        on_return,
     ) -> None:
         super().__init__(application=application, title="Time to stand up")
         self.break_seconds = break_seconds
@@ -136,6 +142,25 @@ class BreakWindow(Gtk.ApplicationWindow):
         prompt.set_line_wrap(True)
         prompt.get_style_context().add_class("break-prompt")
 
+        self.break_actions = Gtk.Box(
+            orientation=Gtk.Orientation.HORIZONTAL, spacing=8
+        )
+
+        self.snooze_button = Gtk.Button(label="Give me 5 minutes")
+        self.snooze_button.set_hexpand(True)
+        self.snooze_button.set_no_show_all(True)
+        self.snooze_button.get_style_context().add_class("break-snooze")
+        self.snooze_button.connect("clicked", on_snooze)
+
+        self.skip_button = Gtk.Button(label="Skip this break")
+        self.skip_button.set_hexpand(True)
+        self.skip_button.set_no_show_all(True)
+        self.skip_button.get_style_context().add_class("break-skip")
+        self.skip_button.connect("clicked", on_skip)
+
+        self.break_actions.pack_start(self.snooze_button, True, True, 0)
+        self.break_actions.pack_start(self.skip_button, True, True, 0)
+
         self.return_button = Gtk.Button(
             label="I'm back \u2014 start 30-minute timer"
         )
@@ -148,6 +173,7 @@ class BreakWindow(Gtk.ApplicationWindow):
         card.pack_start(self.away, False, False, 0)
         card.pack_start(self.progress, False, False, 2)
         card.pack_start(prompt, False, False, 0)
+        card.pack_start(self.break_actions, False, False, 0)
         card.pack_start(self.return_button, False, False, 0)
         self.add(card)
 
@@ -170,6 +196,8 @@ class BreakWindow(Gtk.ApplicationWindow):
         self.progress.set_fraction(
             break_progress_fraction(seconds_remaining, self.break_seconds)
         )
+        self.snooze_button.set_visible(view.can_snooze)
+        self.skip_button.set_visible(view.can_skip)
         self.return_button.set_visible(view.can_return)
 
     def enforce_front(self) -> None:
@@ -225,13 +253,26 @@ class ReminderApplication(Gtk.Application):
                 font-size: 16px;
                 font-weight: 600;
             }
-            button.break-return {
+            button.break-return,
+            button.break-snooze {
                 min-height: 38px;
                 border: 1px solid #f2a65a;
                 background-image: none;
                 border-radius: 6px;
                 color: #18312e;
                 background-color: #f2a65a;
+                box-shadow: none;
+                font-family: Cantarell, sans-serif;
+                font-size: 15px;
+                font-weight: 700;
+            }
+            button.break-skip {
+                min-height: 38px;
+                border: 1px solid #c9ddd5;
+                background-image: none;
+                border-radius: 6px;
+                color: #e9f2ed;
+                background-color: #294c47;
                 box-shadow: none;
                 font-family: Cantarell, sans-serif;
                 font-size: 15px;
@@ -300,15 +341,27 @@ class ReminderApplication(Gtk.Application):
         break_seconds = float(
             os.environ.get("STAND_UP_REMINDER_BREAK_SECONDS", DEFAULT_BREAK_SECONDS)
         )
-        if work_seconds <= 0 or break_seconds <= 0:
+        snooze_seconds = float(
+            os.environ.get(
+                "STAND_UP_REMINDER_SNOOZE_SECONDS", DEFAULT_SNOOZE_SECONDS
+            )
+        )
+        if work_seconds <= 0 or break_seconds <= 0 or snooze_seconds <= 0:
             raise ValueError("timer durations must be positive")
 
         self.scheduler = Scheduler(
             work_seconds=work_seconds,
             break_seconds=break_seconds,
+            snooze_seconds=snooze_seconds,
             mode=settings.mode,
         )
-        self.window = BreakWindow(self, int(break_seconds), self._confirm_return)
+        self.window = BreakWindow(
+            self,
+            int(break_seconds),
+            self._snooze_break,
+            self._skip_break,
+            self._confirm_return,
+        )
         self._build_indicator(settings.mode)
         self._connect_lock_monitor()
         GLib.timeout_add(250, self._tick)
@@ -436,22 +489,14 @@ class ReminderApplication(Gtk.Application):
 
     def _update_interface(self) -> None:
         snapshot = self.scheduler.snapshot()
-        if snapshot.phase is Phase.BREAK:
-            self.status_item.set_label("Break in progress")
-            self.start_item.set_sensitive(False)
-            self.reset_item.set_sensitive(False)
-        elif snapshot.phase is Phase.AWAITING_RETURN:
-            self.status_item.set_label(
-                f"Away for {format_duration(snapshot.away_seconds)}"
-            )
-            self.start_item.set_sensitive(False)
-            self.reset_item.set_sensitive(True)
-        else:
-            self.status_item.set_label(
-                f"Next break in {format_duration(snapshot.seconds_remaining)}"
-            )
-            self.start_item.set_sensitive(True)
-            self.reset_item.set_sensitive(True)
+        view = indicator_view(
+            snapshot.phase,
+            snapshot.seconds_remaining,
+            snapshot.away_seconds,
+        )
+        self.status_item.set_label(view.status)
+        self.start_item.set_sensitive(view.can_start_break)
+        self.reset_item.set_sensitive(view.can_reset_work)
 
         if (
             snapshot.phase in (Phase.BREAK, Phase.AWAITING_RETURN)
@@ -470,6 +515,16 @@ class ReminderApplication(Gtk.Application):
 
     def _confirm_return(self, _button) -> None:
         self._apply_transition(self.scheduler.confirm_return())
+        self._update_interface()
+
+    def _snooze_break(self, _button) -> None:
+        if self.scheduler.snooze_break():
+            self.window.hide()
+        self._update_interface()
+
+    def _skip_break(self, _button) -> None:
+        if self.scheduler.skip_break():
+            self.window.hide()
         self._update_interface()
 
     def _reset_work_interval(self, _item) -> None:

@@ -7,11 +7,14 @@ every 30 minutes of work.
 
 Click the top-bar icon to see the next break, start a break immediately, mark
 your return from a longer break, choose whether lock/suspend time counts, or
-quit the application. During a break, the centered always-on-top popup counts
-down the required two minutes and shows **Away for MM:SS** from the moment the
-break begins. At 00:00 it remains open, changes to **Break complete**, and
-reveals **I'm back — start 30-minute timer**. Click that button when you return
-to close the popup and begin a fresh work interval.
+quit the application. During the two-minute countdown, **Give me 5 minutes**
+closes the popup and brings it back five wall-clock minutes later with a fresh
+two-minute countdown. Snoozing can be repeated. **Skip this break** closes the
+popup and immediately starts a fresh 30-minute work interval.
+
+When a break is allowed to finish, the centered always-on-top popup changes to
+**Break complete** and reveals **I'm back — start 30-minute timer**. Click that
+button when you return to close the popup and begin a fresh work interval.
 
 The top-bar **I'm back — restart 30-minute timer** action performs the same
 return confirmation after the minimum finishes. It remains unavailable during
