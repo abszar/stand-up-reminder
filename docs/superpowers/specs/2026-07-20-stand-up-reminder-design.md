@@ -24,16 +24,16 @@ restart the work interval after returning from a longer break.
 The application is a single small Python/GTK process composed of three focused
 units:
 
-1. **Scheduler:** owns the current phase, deadlines, pause state, and
-   transitions between work and break periods. It exposes deterministic logic
-   that can be tested without starting GTK.
-2. **Countdown window:** renders the active two-minute break, stays centered
-   and above other windows, ignores ordinary close requests, and closes itself
-   only when the countdown reaches zero or the whole application is explicitly
-   quit from the indicator.
-3. **Top-bar indicator:** reports time until the next break and offers Start
-   break now, a long-break return reset, the sleep/lock timing policy, and
-   Quit.
+1. **Scheduler:** owns deadlines, lock state, wall-clock absence time, and
+   three explicit phases: work, enforced two-minute countdown, and awaiting
+   return. It exposes deterministic logic that can be tested without GTK.
+2. **Countdown window:** renders the minimum two-minute countdown and a
+   wall-clock “Away for” count-up. It remains centered and above other windows
+   after the minimum finishes, then closes only after explicit return
+   confirmation or application Quit.
+3. **Top-bar indicator:** reports time until the next break, break progress, or
+   total absence and offers Start break now, return confirmation, the sleep/lock
+   timing policy, and Quit.
 
 A small coordinator connects these units to GTK/GLib timers and GNOME session
 lock events. User settings are stored in a JSON file below the XDG config
@@ -48,22 +48,23 @@ When the interval expires, it enters the break phase and opens the countdown
 window. Selecting Start break now cancels the current work deadline and enters
 the same break phase immediately.
 
-The break countdown begins at 02:00, updates once per second, and ends at
-00:00. Completion closes the window and starts a completely new 30-minute work
-interval. There is no snooze and no ordinary way to dismiss an active break.
-The explicit top-bar Quit command remains an intentional escape hatch and may
-stop the application even during a break.
+The break countdown begins at 02:00 while a separate “Away for” timer counts
+up from 00:00. Reaching 00:00 completes the enforced minimum but does not close
+the popup or begin work. The scheduler enters an awaiting-return phase, the
+popup changes its main message to “Break complete,” and the away timer
+continues to show total wall-clock absence.
 
-The indicator's next-break label is updated during the work phase. While a
-break is active, it reports that the break is in progress and disables the
-manual-start command to prevent overlapping breaks.
+An **I'm back — start 30-minute timer** button appears in the popup only after
+the enforced minimum finishes. Confirming return closes the popup and begins a
+fresh 30-minute interval at that exact moment. Before then, no normal control
+can dismiss the popup. Application Quit remains an intentional escape hatch.
 
-Selecting **I'm back — restart 30-minute timer** during the work phase replaces
-the partially elapsed work deadline with a fresh 30-minute interval. This is
-intended for returning after a break that lasted longer than the enforced
-two-minute countdown. Repeated selections always reset to a new full interval.
-The action is disabled while the enforced break window is active so it cannot
-be used to dismiss that window.
+The indicator reports the next-break countdown during work, “Break in
+progress” during the enforced minimum, and total absence while awaiting return.
+Start break now is disabled outside work. The top-bar **I'm back — restart
+30-minute timer** action remains disabled during the enforced minimum, becomes
+a return confirmation while awaiting return, and resets a partially elapsed
+work deadline when selected during work.
 
 ## Sleep and lock policy
 
@@ -79,31 +80,40 @@ launches:
   break begins immediately after the session unlocks or resumes.
 
 Changing the policy preserves the currently displayed remaining time and uses
-the new policy for subsequent elapsed time. The default is Active time only.
-If the settings file is missing, malformed, or unreadable, the application
-falls back to that default without failing to start.
+the new policy for subsequent work time. The default is Active time only. If
+the settings file is missing, malformed, or unreadable, the application falls
+back to that default without failing to start.
+
+Break countdown and absence timing always use wall-clock time, independent of
+the work timing policy. Lock and suspend therefore count toward total absence.
+The window hides behind the lock screen and reappears after unlock with the
+correct countdown or awaiting-return state.
 
 ## Countdown interface
 
 The break window is a compact, centered card with:
 
-- the title “Time to stand up”;
-- a large `MM:SS` countdown;
+- the title “Time to stand up” during the minimum and “Break complete” after it;
+- a large `MM:SS` countdown during the enforced two minutes;
+- an “Away for MM:SS” count-up visible from the start;
 - a short instruction to stand and move;
-- no close button and no other controls.
+- an **I'm back — start 30-minute timer** button that appears only after 00:00;
+- no close button.
 
 It requests GTK's always-on-top behavior and remains centered on the active
-display. Window-manager close requests, Escape, and Alt+F4 are ignored. At
-00:00 it disappears automatically and the next work interval begins.
+display. Window-manager close requests, Escape, and Alt+F4 are ignored
+throughout both break phases. At 00:00 the popup stays open, the count-up
+continues, and only explicit return confirmation begins the next work interval.
 
 ## Indicator interface
 
 The always-visible GNOME top-bar indicator opens a compact menu containing:
 
-- a disabled status row showing the next break countdown or “Break in
-  progress”;
-- **Start break now**;
-- **I'm back — restart 30-minute timer**, enabled only during the work phase;
+- a disabled status row showing the next-break countdown, “Break in
+  progress,” or “Away for MM:SS”;
+- **Start break now**, enabled only during work;
+- **I'm back — restart 30-minute timer**, disabled during the enforced minimum
+  and enabled during work or while awaiting return;
 - a sleep/lock timing submenu with **Active time only** and **Wall-clock
   time**;
 - **Quit**.
@@ -134,20 +144,23 @@ Automated tests cover the scheduler separately from the graphical interface:
 
 - initial 30-minute deadline;
 - scheduled and manual transitions into a break;
-- the exact two-minute countdown and 30-minute reset after completion;
+- exact two-minute minimum without automatic work restart;
+- wall-clock absence count-up from break start through lock and suspend;
+- return confirmation rejected before the minimum and accepted afterward;
+- 30-minute reset beginning at the return-confirmation moment;
 - duplicate manual-start prevention;
 - active-time pause/resume across locking;
 - wall-clock overdue behavior after unlock or resume;
-- long-break return resets after partially elapsed work intervals;
-- repeated long-break return resets and exact-deadline behavior;
-- policy changes preserving remaining time;
+- long-break return resets during partially elapsed work intervals;
+- repeated resets and exact-deadline behavior;
+- policy changes preserving remaining work time;
 - malformed settings fallback.
 
-Integration checks verify the installed files, service enablement, single
-instance behavior, clean Quit versus crash restart, and Applications-menu
-entry. A short-duration test mode is used during manual verification to confirm
-that the countdown is centered, always on top, non-dismissible through normal
-window controls, and followed by a newly reset work interval.
+Integration checks verify installed files, service startup, single-instance
+behavior, clean Quit, and the Applications entry. Short-duration live
+verification confirms the popup remains always on top after 00:00, the away
+timer continues, the return button appears only after the minimum, and
+confirming return closes the popup and starts a fresh work interval.
 
 ## Out of scope
 
