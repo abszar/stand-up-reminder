@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Stand Up Reminder
+Comment=Start the standing-break reminder at login
+Exec=systemctl --user start stand-up-reminder.service
+Icon=stand-up-reminder-symbolic
+Terminal=false
+NoDisplay=true
+X-GNOME-Autostart-enabled=true
+OnlyShowIn=GNOME;Unity;

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Stand Up Reminder
+Comment=Take a two-minute standing break every 30 minutes
+Exec=systemctl --user start stand-up-reminder.service
+Icon=stand-up-reminder-symbolic
+Terminal=false
+Categories=Utility;GTK;
+StartupNotify=false

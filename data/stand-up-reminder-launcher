@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+
+user_data_root=${XDG_DATA_HOME:-"$HOME/.local/share"}
+exec /usr/bin/python3 "$user_data_root/stand-up-reminder/stand_up_reminder" "$@"

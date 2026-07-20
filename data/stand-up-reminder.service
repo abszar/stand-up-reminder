@@ -1,0 +1,10 @@
+[Unit]
+Description=Stand Up Reminder
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/stand-up-reminder
+Restart=on-failure
+RestartSec=5
