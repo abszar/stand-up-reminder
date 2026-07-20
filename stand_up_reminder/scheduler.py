@@ -10,6 +10,7 @@ from typing import Callable, Optional
 class Phase(str, Enum):
     WORK = "work"
     BREAK = "break"
+    AWAITING_RETURN = "awaiting_return"
 
 
 class TimingMode(str, Enum):
@@ -19,6 +20,7 @@ class TimingMode(str, Enum):
 
 class Transition(str, Enum):
     START_BREAK = "start_break"
+    BREAK_COMPLETE = "break_complete"
     END_BREAK = "end_break"
 
 
@@ -26,6 +28,7 @@ class Transition(str, Enum):
 class Snapshot:
     phase: Phase
     seconds_remaining: int
+    away_seconds: int
     locked: bool
     mode: TimingMode
 
@@ -45,6 +48,7 @@ class Scheduler:
         self.mode = TimingMode(mode)
         self.phase = Phase.WORK
         self.remaining = self.work_seconds
+        self.away_elapsed = 0.0
         self.locked = False
         self._monotonic = monotonic
         self._wall_clock = wall_clock
@@ -63,39 +67,56 @@ class Scheduler:
     def advance(self) -> Optional[Transition]:
         mono_delta, wall_delta = self._elapsed()
 
+        if self.phase in (Phase.BREAK, Phase.AWAITING_RETURN):
+            self.away_elapsed += wall_delta
+            if self.phase is Phase.AWAITING_RETURN:
+                return None
+            self.remaining = max(0.0, self.remaining - wall_delta)
+            if self.remaining > 0:
+                return None
+            self.phase = Phase.AWAITING_RETURN
+            self.remaining = 0.0
+            return Transition.BREAK_COMPLETE
+
         if self.locked:
-            if self.phase is Phase.WORK and self.mode is TimingMode.WALL:
+            if self.mode is TimingMode.WALL:
                 self.remaining = max(0.0, self.remaining - wall_delta)
             return None
 
-        delta = mono_delta
-        if self.phase is Phase.WORK and self.mode is TimingMode.WALL:
-            delta = wall_delta
+        delta = wall_delta if self.mode is TimingMode.WALL else mono_delta
         self.remaining = max(0.0, self.remaining - delta)
-
         if self.remaining > 0:
             return None
-        if self.phase is Phase.WORK:
-            self.phase = Phase.BREAK
-            self.remaining = self.break_seconds
-            return Transition.START_BREAK
 
-        self.phase = Phase.WORK
-        self.remaining = self.work_seconds
-        return Transition.END_BREAK
+        self.phase = Phase.BREAK
+        self.remaining = self.break_seconds
+        self.away_elapsed = 0.0
+        return Transition.START_BREAK
 
     def start_break(self) -> Optional[Transition]:
         transition = self.advance()
-        if self.phase is Phase.BREAK:
+        if self.phase in (Phase.BREAK, Phase.AWAITING_RETURN):
             return transition
         self.phase = Phase.BREAK
         self.remaining = self.break_seconds
+        self.away_elapsed = 0.0
         return Transition.START_BREAK
+
+    def confirm_return(self) -> Optional[Transition]:
+        transition = self.advance()
+        if self.phase is not Phase.AWAITING_RETURN:
+            return transition
+        self.phase = Phase.WORK
+        self.remaining = self.work_seconds
+        self.away_elapsed = 0.0
+        return Transition.END_BREAK
 
     def reset_work_interval(self) -> bool:
         self.advance()
         if self.phase is Phase.BREAK:
             return False
+        if self.phase is Phase.AWAITING_RETURN:
+            return self.confirm_return() is Transition.END_BREAK
         self.remaining = self.work_seconds
         return True
 
@@ -114,6 +135,7 @@ class Scheduler:
     def snapshot(self) -> Snapshot:
         return Snapshot(
             phase=self.phase,
+            away_seconds=int(math.floor(max(0.0, self.away_elapsed))),
             seconds_remaining=int(math.ceil(max(0.0, self.remaining))),
             locked=self.locked,
             mode=self.mode,
