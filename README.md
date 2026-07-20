@@ -7,10 +7,15 @@ every 30 minutes of work.
 
 Click the top-bar icon to see the next break, start a break immediately, mark
 your return from a longer break, choose whether lock/suspend time counts, or
-quit the application. Use **I'm back — restart 30-minute timer** after returning
-to begin a fresh work interval; it is unavailable during the enforced
-countdown. An active break is centered, always on top, and cannot be closed
-through normal window controls. Quit remains the deliberate way to stop the app.
+quit the application. During a break, the centered always-on-top popup counts
+down the required two minutes and shows **Away for MM:SS** from the moment the
+break begins. At 00:00 it remains open, changes to **Break complete**, and
+reveals **I'm back — start 30-minute timer**. Click that button when you return
+to close the popup and begin a fresh work interval.
+
+The top-bar **I'm back — restart 30-minute timer** action performs the same
+return confirmation after the minimum finishes. It remains unavailable during
+the enforced countdown. Quit is the deliberate way to stop the app.
 
 ## Timing modes
 
