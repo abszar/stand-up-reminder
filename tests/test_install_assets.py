@@ -35,7 +35,8 @@ class InstallAssetTests(unittest.TestCase):
     def test_launcher_executes_installed_python_package(self):
         launcher = (ROOT / "data" / "stand-up-reminder-launcher").read_text()
         self.assertIn("/usr/bin/python3", launcher)
-        self.assertIn("stand_up_reminder", launcher)
+        self.assertIn("-m stand_up_reminder", launcher)
+        self.assertIn('cd "$app_install_root"', launcher)
 
     def test_install_and_uninstall_scripts_are_strict(self):
         for name in ("install.sh", "uninstall.sh"):

@@ -2,4 +2,7 @@
 set -eu
 
 user_data_root=${XDG_DATA_HOME:-"$HOME/.local/share"}
-exec /usr/bin/python3 "$user_data_root/stand-up-reminder/stand_up_reminder" "$@"
+app_install_root="$user_data_root/stand-up-reminder"
+
+cd "$app_install_root"
+exec /usr/bin/python3 -m stand_up_reminder "$@"
