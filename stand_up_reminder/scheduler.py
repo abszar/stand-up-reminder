@@ -9,6 +9,7 @@ from typing import Callable, Optional
 
 class Phase(str, Enum):
     WORK = "work"
+    SNOOZED = "snoozed"
     BREAK = "break"
     AWAITING_RETURN = "awaiting_return"
 
@@ -39,12 +40,14 @@ class Scheduler:
         *,
         work_seconds: float = 30 * 60,
         break_seconds: float = 2 * 60,
+        snooze_seconds: float = 5 * 60,
         mode: TimingMode = TimingMode.ACTIVE,
         monotonic: Callable[[], float] = time.monotonic,
         wall_clock: Callable[[], float] = time.time,
     ) -> None:
         self.work_seconds = float(work_seconds)
         self.break_seconds = float(break_seconds)
+        self.snooze_seconds = float(snooze_seconds)
         self.mode = TimingMode(mode)
         self.phase = Phase.WORK
         self.remaining = self.work_seconds
@@ -78,6 +81,15 @@ class Scheduler:
             self.remaining = 0.0
             return Transition.BREAK_COMPLETE
 
+        if self.phase is Phase.SNOOZED:
+            self.remaining = max(0.0, self.remaining - wall_delta)
+            if self.remaining > 0:
+                return None
+            self.phase = Phase.BREAK
+            self.remaining = self.break_seconds
+            self.away_elapsed = 0.0
+            return Transition.START_BREAK
+
         if self.locked:
             if self.mode is TimingMode.WALL:
                 self.remaining = max(0.0, self.remaining - wall_delta)
@@ -95,12 +107,34 @@ class Scheduler:
 
     def start_break(self) -> Optional[Transition]:
         transition = self.advance()
-        if self.phase in (Phase.BREAK, Phase.AWAITING_RETURN):
+        if self.phase in (
+            Phase.SNOOZED,
+            Phase.BREAK,
+            Phase.AWAITING_RETURN,
+        ):
             return transition
         self.phase = Phase.BREAK
         self.remaining = self.break_seconds
         self.away_elapsed = 0.0
         return Transition.START_BREAK
+
+    def snooze_break(self) -> bool:
+        self.advance()
+        if self.phase is not Phase.BREAK:
+            return False
+        self.phase = Phase.SNOOZED
+        self.remaining = self.snooze_seconds
+        self.away_elapsed = 0.0
+        return True
+
+    def skip_break(self) -> bool:
+        self.advance()
+        if self.phase is not Phase.BREAK:
+            return False
+        self.phase = Phase.WORK
+        self.remaining = self.work_seconds
+        self.away_elapsed = 0.0
+        return True
 
     def confirm_return(self) -> Optional[Transition]:
         transition = self.advance()
@@ -113,7 +147,7 @@ class Scheduler:
 
     def reset_work_interval(self) -> bool:
         self.advance()
-        if self.phase is Phase.BREAK:
+        if self.phase in (Phase.SNOOZED, Phase.BREAK):
             return False
         if self.phase is Phase.AWAITING_RETURN:
             return self.confirm_return() is Transition.END_BREAK

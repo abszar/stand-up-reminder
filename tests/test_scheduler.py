@@ -26,6 +26,7 @@ class SchedulerTests(unittest.TestCase):
         self.scheduler = Scheduler(
             work_seconds=30,
             break_seconds=2,
+            snooze_seconds=5,
             mode=TimingMode.ACTIVE,
             monotonic=self.clocks.monotonic,
             wall_clock=self.clocks.wall_clock,
@@ -50,6 +51,100 @@ class SchedulerTests(unittest.TestCase):
         self.assertEqual(snapshot.phase, Phase.AWAITING_RETURN)
         self.assertEqual(snapshot.seconds_remaining, 0)
         self.assertEqual(snapshot.away_seconds, 2)
+
+    def test_snooze_reopens_a_fresh_break_after_wall_clock_delay(self):
+        self.scheduler.start_break()
+
+        self.assertTrue(self.scheduler.snooze_break())
+        snapshot = self.scheduler.snapshot()
+        self.assertEqual(snapshot.phase, Phase.SNOOZED)
+        self.assertEqual(snapshot.seconds_remaining, 5)
+        self.assertEqual(snapshot.away_seconds, 0)
+
+        self.clocks.advance(4, suspended=True)
+        self.assertIsNone(self.scheduler.advance())
+        self.assertEqual(self.scheduler.snapshot().seconds_remaining, 1)
+
+        self.clocks.advance(1, suspended=True)
+        self.assertEqual(self.scheduler.advance(), Transition.START_BREAK)
+        snapshot = self.scheduler.snapshot()
+        self.assertEqual(snapshot.phase, Phase.BREAK)
+        self.assertEqual(snapshot.seconds_remaining, 2)
+        self.assertEqual(snapshot.away_seconds, 0)
+
+    def test_break_can_be_snoozed_repeatedly(self):
+        self.scheduler.start_break()
+        self.assertTrue(self.scheduler.snooze_break())
+        self.clocks.advance(5)
+        self.assertEqual(self.scheduler.advance(), Transition.START_BREAK)
+
+        self.assertTrue(self.scheduler.snooze_break())
+        self.assertEqual(self.scheduler.snapshot().phase, Phase.SNOOZED)
+        self.assertEqual(self.scheduler.snapshot().seconds_remaining, 5)
+
+    def test_overdue_snooze_starts_break_on_unlock(self):
+        self.scheduler.start_break()
+        self.scheduler.snooze_break()
+        self.scheduler.set_locked(True)
+
+        self.clocks.advance(7, suspended=True)
+        self.assertEqual(
+            self.scheduler.set_locked(False), Transition.START_BREAK
+        )
+        snapshot = self.scheduler.snapshot()
+        self.assertEqual(snapshot.phase, Phase.BREAK)
+        self.assertEqual(snapshot.seconds_remaining, 2)
+        self.assertFalse(snapshot.locked)
+
+    def test_skip_break_starts_full_work_interval_at_click_time(self):
+        self.scheduler.start_break()
+        self.clocks.advance(1)
+
+        self.assertTrue(self.scheduler.skip_break())
+        snapshot = self.scheduler.snapshot()
+        self.assertEqual(snapshot.phase, Phase.WORK)
+        self.assertEqual(snapshot.seconds_remaining, 30)
+        self.assertEqual(snapshot.away_seconds, 0)
+
+        self.clocks.advance(6)
+        self.scheduler.advance()
+        self.assertEqual(self.scheduler.snapshot().seconds_remaining, 24)
+
+    def test_snooze_and_skip_are_rejected_outside_active_break(self):
+        self.assertFalse(self.scheduler.snooze_break())
+        self.assertFalse(self.scheduler.skip_break())
+
+        self.scheduler.start_break()
+        self.assertTrue(self.scheduler.snooze_break())
+        self.assertFalse(self.scheduler.snooze_break())
+        self.assertFalse(self.scheduler.skip_break())
+        self.assertEqual(self.scheduler.snapshot().phase, Phase.SNOOZED)
+
+    def test_snooze_at_break_deadline_cannot_bypass_return(self):
+        self.scheduler.start_break()
+        self.clocks.advance(2)
+
+        self.assertFalse(self.scheduler.snooze_break())
+        self.assertEqual(
+            self.scheduler.snapshot().phase, Phase.AWAITING_RETURN
+        )
+
+    def test_skip_at_break_deadline_cannot_bypass_return(self):
+        self.scheduler.start_break()
+        self.clocks.advance(2)
+
+        self.assertFalse(self.scheduler.skip_break())
+        self.assertEqual(
+            self.scheduler.snapshot().phase, Phase.AWAITING_RETURN
+        )
+
+    def test_work_reset_cannot_bypass_snoozed_break(self):
+        self.scheduler.start_break()
+        self.scheduler.snooze_break()
+
+        self.assertFalse(self.scheduler.reset_work_interval())
+        self.assertEqual(self.scheduler.snapshot().phase, Phase.SNOOZED)
+        self.assertEqual(self.scheduler.snapshot().seconds_remaining, 5)
 
     def test_return_confirmation_is_rejected_during_minimum(self):
         self.scheduler.start_break()
