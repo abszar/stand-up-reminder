@@ -34,6 +34,8 @@ class BreakViewTests(unittest.TestCase):
         self.assertEqual(view.title, "Time to stand up")
         self.assertEqual(view.countdown, "01:15")
         self.assertEqual(view.away, "Away for 00:45")
+        self.assertTrue(view.can_snooze)
+        self.assertTrue(view.can_skip)
         self.assertFalse(view.can_return)
 
     def test_awaiting_return_view(self):
@@ -41,7 +43,43 @@ class BreakViewTests(unittest.TestCase):
         self.assertEqual(view.title, "Break complete")
         self.assertEqual(view.countdown, "00:00")
         self.assertEqual(view.away, "Away for 15:00")
+        self.assertFalse(view.can_snooze)
+        self.assertFalse(view.can_skip)
         self.assertTrue(view.can_return)
+
+    def test_snoozed_view_has_no_popup_actions(self):
+        view = application.break_view(Phase.SNOOZED, 5 * 60, 0)
+        self.assertFalse(view.can_snooze)
+        self.assertFalse(view.can_skip)
+        self.assertFalse(view.can_return)
+
+
+class IndicatorViewTests(unittest.TestCase):
+    def test_work_view(self):
+        view = application.indicator_view(Phase.WORK, 24 * 60, 0)
+        self.assertEqual(view.status, "Next break in 24:00")
+        self.assertTrue(view.can_start_break)
+        self.assertTrue(view.can_reset_work)
+
+    def test_snoozed_view(self):
+        view = application.indicator_view(Phase.SNOOZED, 4 * 60 + 9, 0)
+        self.assertEqual(view.status, "Break snoozed for 04:09")
+        self.assertFalse(view.can_start_break)
+        self.assertFalse(view.can_reset_work)
+
+    def test_active_break_view(self):
+        view = application.indicator_view(Phase.BREAK, 75, 45)
+        self.assertEqual(view.status, "Break in progress")
+        self.assertFalse(view.can_start_break)
+        self.assertFalse(view.can_reset_work)
+
+    def test_awaiting_return_view(self):
+        view = application.indicator_view(
+            Phase.AWAITING_RETURN, 0, 15 * 60
+        )
+        self.assertEqual(view.status, "Away for 15:00")
+        self.assertFalse(view.can_start_break)
+        self.assertTrue(view.can_reset_work)
 
 if __name__ == "__main__":
     unittest.main()

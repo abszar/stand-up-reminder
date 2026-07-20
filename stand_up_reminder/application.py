@@ -35,18 +35,50 @@ class BreakView:
     title: str
     countdown: str
     away: str
+    can_snooze: bool
+    can_skip: bool
     can_return: bool
 
 
 def break_view(
     phase: Phase, seconds_remaining: int, away_seconds: int
 ) -> BreakView:
+    active = phase is Phase.BREAK
     awaiting = phase is Phase.AWAITING_RETURN
     return BreakView(
         title="Break complete" if awaiting else "Time to stand up",
         countdown=format_duration(seconds_remaining),
         away=f"Away for {format_duration(away_seconds)}",
+        can_snooze=active,
+        can_skip=active,
         can_return=awaiting,
+    )
+
+
+@dataclass(frozen=True)
+class IndicatorView:
+    status: str
+    can_start_break: bool
+    can_reset_work: bool
+
+
+def indicator_view(
+    phase: Phase, seconds_remaining: int, away_seconds: int
+) -> IndicatorView:
+    if phase is Phase.BREAK:
+        return IndicatorView("Break in progress", False, False)
+    if phase is Phase.SNOOZED:
+        return IndicatorView(
+            f"Break snoozed for {format_duration(seconds_remaining)}",
+            False,
+            False,
+        )
+    if phase is Phase.AWAITING_RETURN:
+        return IndicatorView(
+            f"Away for {format_duration(away_seconds)}", False, True
+        )
+    return IndicatorView(
+        f"Next break in {format_duration(seconds_remaining)}", True, True
     )
 
 
