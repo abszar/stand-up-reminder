@@ -52,6 +52,10 @@ class SchedulerTests(unittest.TestCase):
         self.assertEqual(self.scheduler.start_break(), Transition.START_BREAK)
         self.assertIsNone(self.scheduler.start_break())
 
+    def test_manual_start_preserves_automatic_deadline_transition(self):
+        self.clocks.advance(30)
+        self.assertEqual(self.scheduler.start_break(), Transition.START_BREAK)
+
     def test_active_mode_pauses_during_lock(self):
         self.clocks.advance(10)
         self.scheduler.set_locked(True)
@@ -89,6 +93,12 @@ class SchedulerTests(unittest.TestCase):
         self.clocks.advance(7)
         self.scheduler.set_mode(TimingMode.WALL)
         self.assertEqual(self.scheduler.snapshot().seconds_remaining, 23)
+
+    def test_policy_change_reports_break_started_at_deadline(self):
+        self.clocks.advance(30)
+        self.assertEqual(
+            self.scheduler.set_mode(TimingMode.WALL), Transition.START_BREAK
+        )
 
 
 if __name__ == "__main__":

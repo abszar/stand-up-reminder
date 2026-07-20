@@ -346,7 +346,8 @@ class ReminderApplication(Gtk.Application):
     def _timing_mode_changed(self, item, mode: TimingMode) -> None:
         if not item.get_active() or not self.scheduler:
             return
-        self.scheduler.set_mode(mode)
+        transition = self.scheduler.set_mode(mode)
+        self._apply_transition(transition)
         try:
             self._settings_store.save(Settings(mode))
         except OSError as error:

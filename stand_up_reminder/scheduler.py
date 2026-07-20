@@ -85,9 +85,9 @@ class Scheduler:
         return Transition.END_BREAK
 
     def start_break(self) -> Optional[Transition]:
-        self.advance()
+        transition = self.advance()
         if self.phase is Phase.BREAK:
-            return None
+            return transition
         self.phase = Phase.BREAK
         self.remaining = self.break_seconds
         return Transition.START_BREAK
@@ -99,9 +99,10 @@ class Scheduler:
             return self.advance() or transition
         return transition
 
-    def set_mode(self, mode: TimingMode) -> None:
-        self.advance()
+    def set_mode(self, mode: TimingMode) -> Optional[Transition]:
+        transition = self.advance()
         self.mode = TimingMode(mode)
+        return transition
 
     def snapshot(self) -> Snapshot:
         return Snapshot(
