@@ -22,3 +22,7 @@ dist/
 .DS_Store
 
 .superpowers/
+
+# Compiled translation catalogues
+locale/
+*.mo

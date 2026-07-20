@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "stand-up-reminder"
+version = "1.1.0"
+description = "A GNOME reminder to take a standing break at a regular interval"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [{ name = "Abdelali" }]
+keywords = ["gnome", "gtk", "health", "ergonomics", "reminder"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: X11 Applications :: GTK",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Topic :: Utilities",
+]
+# PyGObject and the GTK/AppIndicator typelibs are provided by the distribution
+# packages listed in README.md rather than installed from PyPI.
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/abszar/stand-up-reminder"
+Source = "https://github.com/abszar/stand-up-reminder"
+Issues = "https://github.com/abszar/stand-up-reminder/issues"
+
+[project.scripts]
+stand-up-reminder = "stand_up_reminder.application:main"
+
+[tool.setuptools]
+packages = ["stand_up_reminder"]

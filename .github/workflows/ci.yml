@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install GTK and AppIndicator bindings
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            python3-gi \
+            gir1.2-gtk-3.0 \
+            gir1.2-ayatanaappindicator3-0.1 \
+            gettext
+
+      - name: Run the test suite
+        run: scripts/run-tests.sh -v
+
+  lint:
+    name: Scripts and catalogues
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            shellcheck \
+            gettext \
+            desktop-file-utils
+
+      - name: Check shell scripts
+        run: shellcheck scripts/*.sh data/stand-up-reminder-launcher
+
+      - name: Check desktop entries
+        run: desktop-file-validate data/*.desktop
+
+      - name: Check translation catalogues
+        run: |
+          for catalogue in po/*.po; do
+            msgfmt --check --output-file /dev/null "$catalogue"
+          done
+
+      - name: Check the template is current
+        run: |
+          cp po/stand-up-reminder.pot /tmp/committed.pot
+          scripts/update-translations.sh
+          # Ignore the generation timestamp, which changes on every run.
+          if ! diff -u \
+            <(grep -v '^"POT-Creation-Date:' /tmp/committed.pot) \
+            <(grep -v '^"POT-Creation-Date:' po/stand-up-reminder.pot); then
+            echo "po/stand-up-reminder.pot is stale; run scripts/update-translations.sh" >&2
+            exit 1
+          fi
+
+  package:
+    name: Debian package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gettext
+
+      - name: Build the package
+        run: scripts/build-deb.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stand-up-reminder-deb
+          path: dist/*.deb

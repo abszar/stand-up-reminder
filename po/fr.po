@@ -1,0 +1,221 @@
+# French translations for Stand Up Reminder package.
+# Copyright (C) 2026 Stand Up Reminder contributors
+# This file is distributed under the same license as the Stand Up Reminder package.
+# Automatically generated, 2026.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: Stand Up Reminder 1.1.0\n"
+"Report-Msgid-Bugs-To: https://github.com/abszar/stand-up-reminder/issues\n"
+"POT-Creation-Date: 2026-07-20 23:50+0200\n"
+"PO-Revision-Date: 2026-07-20 23:40+0200\n"
+"Last-Translator: Automatically generated\n"
+"Language-Team: none\n"
+"Language: fr\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n > 1);\n"
+
+#: stand_up_reminder/application.py
+#, python-format
+msgid "%d second"
+msgid_plural "%d seconds"
+msgstr[0] "%d seconde"
+msgstr[1] "%d secondes"
+
+#: stand_up_reminder/application.py
+#, python-format
+msgid "%d hour"
+msgid_plural "%d hours"
+msgstr[0] "%d heure"
+msgstr[1] "%d heures"
+
+#: stand_up_reminder/application.py
+#, python-format
+msgid "%d minute"
+msgid_plural "%d minutes"
+msgstr[0] "%d minute"
+msgstr[1] "%d minutes"
+
+#: stand_up_reminder/application.py
+msgid "Break complete"
+msgstr "Pause terminée"
+
+#: stand_up_reminder/application.py
+msgid "Time to stand up"
+msgstr "Il est temps de se lever"
+
+#: stand_up_reminder/application.py
+#, python-format
+msgid "Away for %s"
+msgstr "Absent depuis %s"
+
+#: stand_up_reminder/application.py
+msgid "Reminders paused"
+msgstr "Rappels en pause"
+
+#: stand_up_reminder/application.py
+#, python-format
+msgid "Paused for %s"
+msgstr "En pause pendant %s"
+
+#: stand_up_reminder/application.py
+msgid "Break in progress"
+msgstr "Pause en cours"
+
+#: stand_up_reminder/application.py
+#, python-format
+msgid "Break snoozed for %s"
+msgstr "Pause reportée de %s"
+
+#: stand_up_reminder/application.py
+#, python-format
+msgid "Next break in %s"
+msgstr "Prochaine pause dans %s"
+
+#: stand_up_reminder/application.py
+msgid "Paused"
+msgstr "En pause"
+
+#: stand_up_reminder/application.py
+msgid "Stand tall. Let your shoulders drop. Take a few steps."
+msgstr "Tenez-vous droit. Relâchez les épaules. Faites quelques pas."
+
+#: stand_up_reminder/application.py
+msgid "Snooze"
+msgstr "Reporter"
+
+#: stand_up_reminder/application.py
+msgid "Skip this break"
+msgstr "Ignorer cette pause"
+
+#: stand_up_reminder/application.py
+msgid "I'm back — start the work timer"
+msgstr "Je suis de retour — démarrer le minuteur de travail"
+
+#: stand_up_reminder/application.py
+#, python-format
+msgid "Give me %s"
+msgstr "Encore %s"
+
+#: stand_up_reminder/application.py
+#, python-format
+msgid "I'm back — start %s timer"
+msgstr "Je suis de retour — démarrer le minuteur de %s"
+
+#: stand_up_reminder/application.py
+msgid "Enter to confirm"
+msgstr "Entrée pour confirmer"
+
+#: stand_up_reminder/application.py
+msgid "S to snooze · K to skip"
+msgstr "S pour reporter · K pour ignorer"
+
+#: stand_up_reminder/application.py
+msgid "Next break in 30:00"
+msgstr "Prochaine pause dans 30:00"
+
+#: stand_up_reminder/application.py stand_up_reminder/stats.py
+msgid "No breaks yet today"
+msgstr "Aucune pause aujourd'hui"
+
+#: stand_up_reminder/application.py
+msgid "Start break now"
+msgstr "Démarrer la pause maintenant"
+
+#: stand_up_reminder/application.py
+msgid "I'm back — restart the work timer"
+msgstr "Je suis de retour — redémarrer le minuteur de travail"
+
+#: stand_up_reminder/application.py
+msgid "Pause reminders"
+msgstr "Suspendre les rappels"
+
+#: stand_up_reminder/application.py
+#, python-format
+msgid "For %s"
+msgstr "Pendant %s"
+
+#: stand_up_reminder/application.py
+msgid "Until I resume"
+msgstr "Jusqu'à ce que je reprenne"
+
+#: stand_up_reminder/application.py
+msgid "Resume reminders"
+msgstr "Reprendre les rappels"
+
+#: stand_up_reminder/application.py
+msgid "Quit"
+msgstr "Quitter"
+
+#: stand_up_reminder/application.py
+msgid "Durations"
+msgstr "Durées"
+
+#: stand_up_reminder/application.py
+msgid "Work interval"
+msgstr "Intervalle de travail"
+
+#: stand_up_reminder/application.py
+msgid "Break length"
+msgstr "Durée de la pause"
+
+#: stand_up_reminder/application.py
+msgid "Sleep and lock timing"
+msgstr "Comptage en veille et verrouillage"
+
+#: stand_up_reminder/application.py
+msgid "Active time only"
+msgstr "Temps actif uniquement"
+
+#: stand_up_reminder/application.py
+msgid "Wall-clock time"
+msgstr "Temps réel"
+
+#: stand_up_reminder/application.py
+msgid "Options"
+msgstr "Options"
+
+#: stand_up_reminder/application.py
+msgid "Show countdown in top bar"
+msgstr "Afficher le compte à rebours dans la barre"
+
+#: stand_up_reminder/application.py
+msgid "Count time away as a break"
+msgstr "Compter une absence comme une pause"
+
+#: stand_up_reminder/application.py
+msgid "Play a sound at each break"
+msgstr "Jouer un son à chaque pause"
+
+#: stand_up_reminder/application.py
+msgid "Break coming up"
+msgstr "Pause imminente"
+
+#: stand_up_reminder/application.py
+#, python-format
+msgid "Time to stand up in %s"
+msgstr "Levez-vous dans %s"
+
+#: stand_up_reminder/stats.py
+#, python-format
+msgid "%d break taken"
+msgid_plural "%d breaks taken"
+msgstr[0] "%d pause prise"
+msgstr[1] "%d pauses prises"
+
+#: stand_up_reminder/stats.py
+#, python-format
+msgid "%d skipped"
+msgstr "%d ignorée(s)"
+
+#: stand_up_reminder/stats.py
+#, python-format
+msgid "%d snoozed"
+msgstr "%d reportée(s)"
+
+#: stand_up_reminder/stats.py
+#, python-format
+msgid "Today: %s"
+msgstr "Aujourd'hui : %s"

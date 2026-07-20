@@ -20,7 +20,7 @@ class FakeClocks:
             self.mono += seconds
 
 
-class SchedulerTests(unittest.TestCase):
+class SchedulerFixture(unittest.TestCase):
     def setUp(self):
         self.clocks = FakeClocks()
         self.scheduler = Scheduler(
@@ -32,6 +32,8 @@ class SchedulerTests(unittest.TestCase):
             wall_clock=self.clocks.wall_clock,
         )
 
+
+class SchedulerTests(SchedulerFixture):
     def test_initial_work_interval(self):
         snapshot = self.scheduler.snapshot()
         self.assertEqual(snapshot.phase, Phase.WORK)
@@ -274,6 +276,192 @@ class SchedulerTests(unittest.TestCase):
         self.clocks.advance(30)
         self.assertFalse(self.scheduler.reset_work_interval())
         self.assertEqual(self.scheduler.snapshot().phase, Phase.BREAK)
+
+
+class PauseTests(SchedulerFixture):
+    def test_indefinite_pause_holds_the_work_interval(self):
+        self.clocks.advance(10)
+        self.assertTrue(self.scheduler.pause())
+        snapshot = self.scheduler.snapshot()
+        self.assertEqual(snapshot.phase, Phase.PAUSED)
+        self.assertTrue(snapshot.paused_indefinitely)
+
+        self.clocks.advance(600)
+        self.assertIsNone(self.scheduler.advance())
+        self.assertEqual(self.scheduler.snapshot().phase, Phase.PAUSED)
+
+    def test_resume_restores_the_remaining_work_time(self):
+        self.clocks.advance(10)
+        self.scheduler.pause()
+        self.clocks.advance(600)
+        self.scheduler.resume()
+
+        snapshot = self.scheduler.snapshot()
+        self.assertEqual(snapshot.phase, Phase.WORK)
+        self.assertEqual(snapshot.seconds_remaining, 20)
+
+    def test_timed_pause_resumes_work_on_its_own(self):
+        self.clocks.advance(10)
+        self.assertTrue(self.scheduler.pause(60))
+        self.assertEqual(self.scheduler.snapshot().seconds_remaining, 60)
+        self.assertFalse(self.scheduler.snapshot().paused_indefinitely)
+
+        self.clocks.advance(60)
+        self.assertIsNone(self.scheduler.advance())
+        snapshot = self.scheduler.snapshot()
+        self.assertEqual(snapshot.phase, Phase.WORK)
+        self.assertEqual(snapshot.seconds_remaining, 20)
+
+    def test_timed_pause_counts_wall_clock_across_suspend(self):
+        self.scheduler.pause(60)
+        self.clocks.advance(60, suspended=True)
+        self.scheduler.advance()
+        self.assertEqual(self.scheduler.snapshot().phase, Phase.WORK)
+
+    def test_pause_cannot_dismiss_an_active_break(self):
+        self.scheduler.start_break()
+        self.assertFalse(self.scheduler.pause())
+        self.assertEqual(self.scheduler.snapshot().phase, Phase.BREAK)
+
+    def test_pause_cannot_bypass_a_snoozed_break(self):
+        self.scheduler.start_break()
+        self.scheduler.snooze_break()
+        self.assertFalse(self.scheduler.pause())
+        self.assertEqual(self.scheduler.snapshot().phase, Phase.SNOOZED)
+
+    def test_pause_at_the_work_deadline_starts_the_break_instead(self):
+        self.clocks.advance(30)
+        self.assertFalse(self.scheduler.pause())
+        self.assertEqual(self.scheduler.snapshot().phase, Phase.BREAK)
+
+    def test_resume_is_ignored_when_not_paused(self):
+        self.assertFalse(self.scheduler.resume())
+        self.assertEqual(self.scheduler.snapshot().phase, Phase.WORK)
+
+
+class DurationChangeTests(SchedulerFixture):
+    def test_a_new_work_length_restarts_the_current_interval(self):
+        self.clocks.advance(10)
+        self.scheduler.set_durations(work_seconds=60)
+        snapshot = self.scheduler.snapshot()
+        self.assertEqual(snapshot.phase, Phase.WORK)
+        self.assertEqual(snapshot.seconds_remaining, 60)
+
+    def test_an_unchanged_work_length_leaves_the_interval_running(self):
+        self.clocks.advance(10)
+        self.scheduler.set_durations(break_seconds=30)
+        self.assertEqual(self.scheduler.snapshot().seconds_remaining, 20)
+
+    def test_a_new_break_length_applies_to_the_next_break(self):
+        self.scheduler.set_durations(break_seconds=30)
+        self.scheduler.start_break()
+        self.assertEqual(self.scheduler.snapshot().seconds_remaining, 30)
+
+    def test_an_active_break_keeps_its_original_length(self):
+        self.scheduler.start_break()
+        self.scheduler.set_durations(break_seconds=600)
+        self.assertEqual(self.scheduler.snapshot().seconds_remaining, 2)
+
+    def test_a_new_snooze_length_applies_to_the_next_snooze(self):
+        self.scheduler.set_durations(snooze_seconds=90)
+        self.scheduler.start_break()
+        self.scheduler.snooze_break()
+        self.assertEqual(self.scheduler.snapshot().seconds_remaining, 90)
+
+    def test_changing_the_work_length_re_arms_the_warning(self):
+        self.scheduler.set_durations(work_seconds=30, warning_seconds=10)
+        self.clocks.advance(20)
+        self.assertEqual(self.scheduler.advance(), Transition.WARN_BREAK)
+
+    def test_durations_can_be_changed_while_paused_without_resuming(self):
+        self.scheduler.pause()
+        self.scheduler.set_durations(work_seconds=60)
+        self.assertEqual(self.scheduler.snapshot().phase, Phase.PAUSED)
+        self.scheduler.resume()
+        self.assertEqual(self.scheduler.snapshot().seconds_remaining, 60)
+
+
+class WarningTests(unittest.TestCase):
+    def setUp(self):
+        self.clocks = FakeClocks()
+        self.scheduler = Scheduler(
+            work_seconds=30,
+            break_seconds=2,
+            snooze_seconds=5,
+            warning_seconds=10,
+            monotonic=self.clocks.monotonic,
+            wall_clock=self.clocks.wall_clock,
+        )
+
+    def test_warning_is_emitted_once_before_the_break(self):
+        self.clocks.advance(19)
+        self.assertIsNone(self.scheduler.advance())
+
+        self.clocks.advance(1)
+        self.assertEqual(self.scheduler.advance(), Transition.WARN_BREAK)
+        self.assertEqual(self.scheduler.snapshot().phase, Phase.WORK)
+
+        self.clocks.advance(1)
+        self.assertIsNone(self.scheduler.advance())
+
+    def test_break_deadline_takes_precedence_over_a_missed_warning(self):
+        self.clocks.advance(30)
+        self.assertEqual(self.scheduler.advance(), Transition.START_BREAK)
+
+    def test_each_work_interval_warns_again(self):
+        self.clocks.advance(20)
+        self.assertEqual(self.scheduler.advance(), Transition.WARN_BREAK)
+        self.clocks.advance(10)
+        self.scheduler.advance()
+        self.scheduler.skip_break()
+
+        self.clocks.advance(20)
+        self.assertEqual(self.scheduler.advance(), Transition.WARN_BREAK)
+
+    def test_resuming_from_pause_can_warn_again(self):
+        self.clocks.advance(20)
+        self.assertEqual(self.scheduler.advance(), Transition.WARN_BREAK)
+        self.scheduler.pause()
+        self.scheduler.resume()
+
+        self.clocks.advance(1)
+        self.assertEqual(self.scheduler.advance(), Transition.WARN_BREAK)
+
+    def test_disabled_warning_never_fires(self):
+        scheduler = Scheduler(
+            work_seconds=30,
+            break_seconds=2,
+            warning_seconds=0,
+            monotonic=self.clocks.monotonic,
+            wall_clock=self.clocks.wall_clock,
+        )
+        self.clocks.advance(29)
+        self.assertIsNone(scheduler.advance())
+
+
+class IdleCreditTests(SchedulerFixture):
+    def test_idle_longer_than_a_break_restarts_the_work_interval(self):
+        self.clocks.advance(20)
+        self.assertTrue(self.scheduler.credit_idle_break(5))
+        snapshot = self.scheduler.snapshot()
+        self.assertEqual(snapshot.phase, Phase.WORK)
+        self.assertEqual(snapshot.seconds_remaining, 30)
+
+    def test_short_idle_does_not_count_as_a_break(self):
+        self.clocks.advance(20)
+        self.assertFalse(self.scheduler.credit_idle_break(1))
+        self.assertEqual(self.scheduler.snapshot().seconds_remaining, 10)
+
+    def test_idle_does_not_dismiss_an_enforced_break(self):
+        self.scheduler.start_break()
+        self.assertFalse(self.scheduler.credit_idle_break(600))
+        self.assertEqual(self.scheduler.snapshot().phase, Phase.BREAK)
+
+    def test_idle_does_not_resume_a_paused_timer(self):
+        self.scheduler.pause()
+        self.assertFalse(self.scheduler.credit_idle_break(600))
+        self.assertEqual(self.scheduler.snapshot().phase, Phase.PAUSED)
+
 
 if __name__ == "__main__":
     unittest.main()
