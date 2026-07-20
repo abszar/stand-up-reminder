@@ -5,7 +5,7 @@ set -eu
 # from scripts/install.sh: files live under /usr, and the user service is
 # provided as a system-wide user unit that starts at each graphical login.
 
-project_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+project_root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$project_root"
 
 version=$(sed -n 's/^version = "\(.*\)"$/\1/p' pyproject.toml | head -n 1)

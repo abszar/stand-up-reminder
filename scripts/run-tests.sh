@@ -5,7 +5,7 @@ set -eu
 # untranslated strings, so a translated desktop session must not change the
 # catalogue that the application binds at import time.
 
-project_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+project_root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$project_root"
 
 LANGUAGE=en

@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-project_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+project_root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 user_data_root=${XDG_DATA_HOME:-"$HOME/.local/share"}
 user_config_root=${XDG_CONFIG_HOME:-"$HOME/.config"}
 app_install_root="$user_data_root/stand-up-reminder"

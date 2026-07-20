@@ -4,7 +4,7 @@ set -eu
 # Regenerates po/stand-up-reminder.pot from the source strings and merges the
 # result into every existing catalogue.
 
-project_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+project_root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$project_root"
 
 version=$(sed -n 's/^version = "\(.*\)"$/\1/p' pyproject.toml | head -n 1)

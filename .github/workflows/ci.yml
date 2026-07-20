@@ -14,7 +14,7 @@ jobs:
     name: Unit tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install GTK and AppIndicator bindings
         run: |
@@ -32,7 +32,7 @@ jobs:
     name: Scripts and catalogues
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install tooling
         run: |
@@ -70,7 +70,7 @@ jobs:
     name: Debian package
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install tooling
         run: |
@@ -80,7 +80,7 @@ jobs:
       - name: Build the package
         run: scripts/build-deb.sh
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: stand-up-reminder-deb
           path: dist/*.deb
