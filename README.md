@@ -5,10 +5,12 @@ every 30 minutes of work.
 
 ## Controls
 
-Click the top-bar icon to see the next break, start a break immediately, choose
-whether lock/suspend time counts, or quit the application. An active break is a
-centered always-on-top countdown and cannot be closed through normal window
-controls. Quit remains available as the deliberate way to stop the app.
+Click the top-bar icon to see the next break, start a break immediately, mark
+your return from a longer break, choose whether lock/suspend time counts, or
+quit the application. Use **I'm back — restart 30-minute timer** after returning
+to begin a fresh work interval; it is unavailable during the enforced
+countdown. An active break is centered, always on top, and cannot be closed
+through normal window controls. Quit remains the deliberate way to stop the app.
 
 ## Timing modes
 

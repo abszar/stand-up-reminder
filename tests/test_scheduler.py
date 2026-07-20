@@ -100,6 +100,29 @@ class SchedulerTests(unittest.TestCase):
             self.scheduler.set_mode(TimingMode.WALL), Transition.START_BREAK
         )
 
+    def test_long_break_return_resets_partial_work_interval(self):
+        self.clocks.advance(11)
+        self.assertTrue(self.scheduler.reset_work_interval())
+        self.assertEqual(self.scheduler.snapshot().phase, Phase.WORK)
+        self.assertEqual(self.scheduler.snapshot().seconds_remaining, 30)
+
+    def test_repeated_long_break_return_resets_are_full_intervals(self):
+        self.clocks.advance(8)
+        self.scheduler.reset_work_interval()
+        self.clocks.advance(6)
+        self.assertTrue(self.scheduler.reset_work_interval())
+        self.assertEqual(self.scheduler.snapshot().seconds_remaining, 30)
+
+    def test_long_break_return_cannot_dismiss_active_break(self):
+        self.scheduler.start_break()
+        self.assertFalse(self.scheduler.reset_work_interval())
+        self.assertEqual(self.scheduler.snapshot().phase, Phase.BREAK)
+        self.assertEqual(self.scheduler.snapshot().seconds_remaining, 2)
+
+    def test_long_break_return_at_deadline_preserves_enforced_break(self):
+        self.clocks.advance(30)
+        self.assertFalse(self.scheduler.reset_work_interval())
+        self.assertEqual(self.scheduler.snapshot().phase, Phase.BREAK)
 
 if __name__ == "__main__":
     unittest.main()

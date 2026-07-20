@@ -92,6 +92,13 @@ class Scheduler:
         self.remaining = self.break_seconds
         return Transition.START_BREAK
 
+    def reset_work_interval(self) -> bool:
+        self.advance()
+        if self.phase is Phase.BREAK:
+            return False
+        self.remaining = self.work_seconds
+        return True
+
     def set_locked(self, locked: bool) -> Optional[Transition]:
         transition = self.advance()
         self.locked = bool(locked)

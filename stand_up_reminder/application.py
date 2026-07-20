@@ -109,6 +109,7 @@ class ReminderApplication(Gtk.Application):
         self.indicator = None
         self.status_item = None
         self.start_item = None
+        self.reset_item = None
         self.active_item = None
         self.wall_item = None
         self._settings_store: Optional[SettingsStore] = None
@@ -233,6 +234,11 @@ class ReminderApplication(Gtk.Application):
         self.start_item = Gtk.MenuItem(label="Start break now")
         self.start_item.connect("activate", self._start_break_now)
         menu.append(self.start_item)
+        self.reset_item = Gtk.MenuItem(
+            label="I'm back — restart 30-minute timer"
+        )
+        self.reset_item.connect("activate", self._reset_work_interval)
+        menu.append(self.reset_item)
         menu.append(Gtk.SeparatorMenuItem())
 
         timing_item = Gtk.MenuItem(label="Sleep and lock timing")
@@ -330,6 +336,7 @@ class ReminderApplication(Gtk.Application):
         if snapshot.phase is Phase.BREAK:
             self.status_item.set_label("Break in progress")
             self.start_item.set_sensitive(False)
+            self.reset_item.set_sensitive(False)
             if not snapshot.locked:
                 self.window.set_seconds(snapshot.seconds_remaining)
                 self.window.set_keep_above(True)
@@ -338,10 +345,15 @@ class ReminderApplication(Gtk.Application):
                 f"Next break in {format_duration(snapshot.seconds_remaining)}"
             )
             self.start_item.set_sensitive(True)
+            self.reset_item.set_sensitive(True)
 
     def _start_break_now(self, _item) -> None:
         self._apply_transition(self.scheduler.start_break())
         self._update_interface()
+
+    def _reset_work_interval(self, _item) -> None:
+        if self.scheduler.reset_work_interval():
+            self._update_interface()
 
     def _timing_mode_changed(self, item, mode: TimingMode) -> None:
         if not item.get_active() or not self.scheduler:
