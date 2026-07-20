@@ -195,9 +195,12 @@ class ReminderApplication(Gtk.Application):
             }
             button.break-return {
                 min-height: 38px;
+                border: 1px solid #f2a65a;
+                background-image: none;
                 border-radius: 6px;
                 color: #18312e;
                 background-color: #f2a65a;
+                box-shadow: none;
                 font-family: Cantarell, sans-serif;
                 font-size: 15px;
                 font-weight: 700;
