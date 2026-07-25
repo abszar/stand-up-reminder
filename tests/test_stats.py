@@ -12,6 +12,7 @@ from stand_up_reminder.stats import (
     aggregate_stats,
     last_days,
     rating_label,
+    score_headline,
     score_line,
     summary_label,
     timeline_layout,
@@ -118,6 +119,17 @@ class RatingLabelTests(unittest.TestCase):
         self.assertEqual(rating_label(70), "Good — most breaks taken")
         self.assertEqual(rating_label(40), "Could be better — many breaks slip by")
         self.assertEqual(rating_label(39), "Time to stand up more often")
+
+
+class ScoreHeadlineTests(unittest.TestCase):
+    def test_pairs_the_percentage_with_its_mood(self):
+        self.assertEqual(score_headline(95), "95% 😄")
+        self.assertEqual(score_headline(70), "70% 🙂")
+        self.assertEqual(score_headline(40), "40% 😐")
+        self.assertEqual(score_headline(5), "5% 😟")
+
+    def test_shows_a_dash_when_no_breaks_were_due(self):
+        self.assertEqual(score_headline(None), "—")
 
 
 class ScoreLineTests(unittest.TestCase):

@@ -12,6 +12,8 @@ All notable changes to Stand Up Reminder are documented in this file.
   red missed, orange skipped, pale snoozed). The statistics popup adds the
   track's start and end times and a color legend. The whole timeline block
   stays hidden until the day has its first recorded outcome.
+- The statistics popup carries the mood emoji beside its score, labels that
+  score as the week's, and adds today's score on its own line.
 
 ## [1.2.0] - 2026-07-25
 

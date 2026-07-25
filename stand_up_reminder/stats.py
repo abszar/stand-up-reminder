@@ -111,7 +111,8 @@ def score_emoji(percent: int) -> str:
     return "😟"
 
 
-def _score_part(percent: Optional[int]) -> str:
+def score_headline(percent: Optional[int]) -> str:
+    """A percentage with its mood, or an em dash when nothing was due."""
     if percent is None:
         return "—"
     return f"{percent}% {score_emoji(percent)}"
@@ -123,8 +124,8 @@ def score_line(
     """One-line day and week adherence summary for the break window."""
     return " · ".join(
         (
-            _("Today: %s") % _score_part(today_percent),
-            _("This week: %s") % _score_part(week_percent),
+            _("Today: %s") % score_headline(today_percent),
+            _("This week: %s") % score_headline(week_percent),
         )
     )
 

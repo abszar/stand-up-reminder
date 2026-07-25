@@ -38,6 +38,7 @@ from .stats import (
     aggregate_stats,
     last_days,
     rating_label,
+    score_headline,
     score_line,
     summary_label,
     timeline_layout,
@@ -499,6 +500,10 @@ class StatsWindow(Gtk.Window):
         eyebrow.set_xalign(0.0)
         eyebrow.get_style_context().add_class("break-eyebrow")
 
+        self.score_caption = Gtk.Label(label=_("This week"))
+        self.score_caption.set_xalign(0.0)
+        self.score_caption.get_style_context().add_class("stats-day-name")
+
         self.score = Gtk.Label(label="")
         self.score.set_xalign(0.0)
         self.score.get_style_context().add_class("stats-score")
@@ -507,6 +512,10 @@ class StatsWindow(Gtk.Window):
         self.verdict.set_xalign(0.0)
         self.verdict.set_line_wrap(True)
         self.verdict.get_style_context().add_class("break-away")
+
+        self.today_score = Gtk.Label(label="")
+        self.today_score.set_xalign(0.0)
+        self.today_score.get_style_context().add_class("break-scores")
 
         self.timeline = TimelineStrip(height=34, dot_radius=6.0)
         self.timeline.set_no_show_all(True)
@@ -521,6 +530,10 @@ class StatsWindow(Gtk.Window):
         self.timeline_end.get_style_context().add_class("stats-day-name")
         hours.pack_start(self.timeline_start, True, True, 0)
         hours.pack_start(self.timeline_end, True, True, 0)
+        # The children are shown once here: show_all() is a no-op on a
+        # widget that carries no-show-all, so only the box is toggled.
+        self.timeline_start.show()
+        self.timeline_end.show()
         hours.set_no_show_all(True)
         self.timeline_hours = hours
 
@@ -537,6 +550,7 @@ class StatsWindow(Gtk.Window):
                 f'<span foreground="{TIMELINE_COLORS[outcome]}">●</span> {word}'
             )
             entry.get_style_context().add_class("stats-day-name")
+            entry.show()
             legend.pack_start(entry, False, False, 0)
         legend.set_no_show_all(True)
         self.timeline_legend = legend
@@ -561,8 +575,10 @@ class StatsWindow(Gtk.Window):
         close_button.connect("clicked", lambda *_args: self.hide())
 
         card.pack_start(eyebrow, False, False, 0)
+        card.pack_start(self.score_caption, False, False, 0)
         card.pack_start(self.score, False, False, 0)
         card.pack_start(self.verdict, False, False, 0)
+        card.pack_start(self.today_score, False, False, 0)
         card.pack_start(self.timeline, False, False, 4)
         card.pack_start(self.timeline_hours, False, False, 0)
         card.pack_start(self.timeline_legend, False, False, 0)
@@ -599,8 +615,8 @@ class StatsWindow(Gtk.Window):
         # The whole timeline block appears only once the day has dots.
         if points:
             self.timeline.show()
-            self.timeline_hours.show_all()
-            self.timeline_legend.show_all()
+            self.timeline_hours.show()
+            self.timeline_legend.show()
         else:
             self.timeline.hide()
             self.timeline_hours.hide()
@@ -608,8 +624,11 @@ class StatsWindow(Gtk.Window):
         today_stats = week[-1][1] if week else DailyStats()
         week_total = aggregate_stats(stats for _day, stats in week)
         percent = adherence_percent(week_total)
-        self.score.set_text("—" if percent is None else f"{percent}%")
+        self.score.set_text(score_headline(percent))
         self.verdict.set_text(rating_label(percent))
+        self.today_score.set_text(
+            _("Today: %s") % score_headline(adherence_percent(today_stats))
+        )
         self.today_line.set_text(summary_label(today_stats))
         self.week_line.set_text(week_label(week_total))
 

@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Stand Up Reminder 1.2.0\n"
 "Report-Msgid-Bugs-To: https://github.com/abszar/stand-up-reminder/issues\n"
-"POT-Creation-Date: 2026-07-25 15:12+0200\n"
+"POT-Creation-Date: 2026-07-25 22:19+0200\n"
 "PO-Revision-Date: 2026-07-20 23:40+0200\n"
 "Last-Translator: Automatically generated\n"
 "Language-Team: none\n"
@@ -130,6 +130,10 @@ msgid "Statistics"
 msgstr "Statistiques"
 
 #: stand_up_reminder/application.py
+msgid "This week"
+msgstr "Cette semaine"
+
+#: stand_up_reminder/application.py
 msgid "taken"
 msgstr "prises"
 
@@ -152,6 +156,11 @@ msgstr "reportées"
 #: stand_up_reminder/application.py
 msgid "Close"
 msgstr "Fermer"
+
+#: stand_up_reminder/application.py stand_up_reminder/stats.py
+#, python-format
+msgid "Today: %s"
+msgstr "Aujourd'hui : %s"
 
 #: stand_up_reminder/application.py
 msgid "Next break in 30:00"
@@ -260,11 +269,6 @@ msgstr "%d ignorée(s)"
 #, python-format
 msgid "%d snoozed"
 msgstr "%d reportée(s)"
-
-#: stand_up_reminder/stats.py
-#, python-format
-msgid "Today: %s"
-msgstr "Aujourd'hui : %s"
 
 #: stand_up_reminder/stats.py
 msgid "No breaks this week"
