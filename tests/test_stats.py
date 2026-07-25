@@ -14,6 +14,7 @@ from stand_up_reminder.stats import (
     rating_label,
     score_line,
     summary_label,
+    timeline_layout,
     week_label,
 )
 
@@ -133,6 +134,30 @@ class ScoreLineTests(unittest.TestCase):
         self.assertEqual(score_line(None, 100), "Today: — · This week: 100% 😄")
 
 
+class TimelineLayoutTests(unittest.TestCase):
+    def test_places_events_between_the_first_hour_and_now(self):
+        start, end, points = timeline_layout(
+            [(9 * 60 + 30, "taken"), (10 * 60, "missed")], now_minutes=10 * 60 + 30
+        )
+        self.assertEqual(start, 9 * 60)
+        self.assertEqual(end, 11 * 60)
+        self.assertEqual(points, [(0.25, "taken"), (0.5, "missed")])
+
+    def test_an_empty_day_spans_the_current_hour(self):
+        start, end, points = timeline_layout([], now_minutes=10 * 60 + 15)
+        self.assertEqual(start, 10 * 60)
+        self.assertEqual(end, 11 * 60)
+        self.assertEqual(points, [])
+
+    def test_the_track_stretches_to_cover_every_event(self):
+        _start, _end, points = timeline_layout(
+            [(8 * 60, "taken"), (19 * 60, "missed")], now_minutes=12 * 60
+        )
+        for fraction, _outcome in points:
+            self.assertGreaterEqual(fraction, 0.0)
+            self.assertLessEqual(fraction, 1.0)
+
+
 class StatsStoreTests(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
@@ -187,6 +212,46 @@ class StatsStoreTests(unittest.TestCase):
 
         self.store.record(BreakOutcome.TAKEN, "2026-07-20")
         self.assertEqual(self.store.load("2026-07-20"), DailyStats(taken=1))
+
+    def test_each_outcome_is_recorded_with_its_time_of_day(self):
+        self.store.record(BreakOutcome.TAKEN, "2026-07-20", at="09:30")
+        self.store.record(BreakOutcome.MISSED, "2026-07-20", at="14:05")
+        self.assertEqual(
+            self.store.load_events("2026-07-20"),
+            [(9 * 60 + 30, "taken"), (14 * 60 + 5, "missed")],
+        )
+        self.assertEqual(
+            self.store.load("2026-07-20"), DailyStats(taken=1, missed=1)
+        )
+
+    def test_a_day_without_events_has_an_empty_timeline(self):
+        self.assertEqual(self.store.load_events("2026-07-20"), [])
+
+    def test_malformed_events_are_skipped(self):
+        self.path.parent.mkdir(parents=True)
+        self.path.write_text(
+            json.dumps(
+                {
+                    "days": {
+                        "2026-07-20": {
+                            "taken": 2,
+                            "events": [
+                                ["09:30", "taken"],
+                                ["bogus", "taken"],
+                                "not-a-pair",
+                                ["10:15", 7],
+                                ["26:70", "taken"],
+                                ["-1:30", "taken"],
+                            ],
+                        }
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        self.assertEqual(
+            self.store.load_events("2026-07-20"), [(9 * 60 + 30, "taken")]
+        )
 
     def test_load_days_reads_several_days_at_once(self):
         self.store.record(BreakOutcome.TAKEN, "2026-07-19")

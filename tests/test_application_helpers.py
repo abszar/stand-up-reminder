@@ -8,6 +8,7 @@ from stand_up_reminder.application import (
     break_progress_fraction,
     duration_label,
     format_duration,
+    hex_rgb,
     idle_credit_threshold,
     indicator_label,
     is_wayland_session,
@@ -53,6 +54,16 @@ class BreakProgressTests(unittest.TestCase):
         self.assertEqual(break_progress_fraction(200, 120), 1.0)
         self.assertEqual(break_progress_fraction(-1, 120), 0.0)
         self.assertEqual(break_progress_fraction(10, 0), 0.0)
+
+
+class HexRgbTests(unittest.TestCase):
+    def test_converts_hex_colors_to_unit_floats(self):
+        self.assertEqual(hex_rgb("#ff0000"), (1.0, 0.0, 0.0))
+        self.assertEqual(hex_rgb("#000000"), (0.0, 0.0, 0.0))
+        red, green, blue = hex_rgb("#7bc47f")
+        self.assertAlmostEqual(red, 0x7B / 255)
+        self.assertAlmostEqual(green, 0xC4 / 255)
+        self.assertAlmostEqual(blue, 0x7F / 255)
 
 
 class IdleCreditThresholdTests(unittest.TestCase):

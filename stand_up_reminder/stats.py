@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from enum import Enum
 from pathlib import Path
 from typing import Iterable, Optional, Sequence
@@ -129,6 +129,40 @@ def score_line(
     )
 
 
+def _event_minutes(raw: str) -> Optional[int]:
+    try:
+        hours, minutes = raw.split(":")
+        value = int(hours) * 60 + int(minutes)
+    except (AttributeError, TypeError, ValueError):
+        return None
+    if not 0 <= value < 24 * 60:
+        return None
+    return value
+
+
+def timeline_layout(
+    events: Sequence[tuple[int, str]], now_minutes: int
+) -> tuple[int, int, list[tuple[float, str]]]:
+    """Day-axis positions for the outcome dots.
+
+    The track spans whole hours, from the first event (or now, on a quiet
+    day) up to the later of the last event and the present moment, so the
+    dots spread over the part of the day that was actually worked.
+    """
+    times = [minutes for minutes, _outcome in events]
+    start = (min(times + [now_minutes]) // 60) * 60
+    end_raw = max(times + [now_minutes])
+    end = -(-end_raw // 60) * 60
+    if end <= start:
+        end = start + 60
+    span = end - start
+    points = [
+        (min(1.0, max(0.0, (minutes - start) / span)), outcome)
+        for minutes, outcome in events
+    ]
+    return start, end, points
+
+
 def rating_label(percent: Optional[int]) -> str:
     if percent is None:
         return _("No breaks due yet")
@@ -186,15 +220,43 @@ class StatsStore:
         stored = self._read_days()
         return [self._entry_stats(stored.get(day, {})) for day in days]
 
-    def record(self, outcome: BreakOutcome, today: Optional[str] = None) -> None:
+    def record(
+        self,
+        outcome: BreakOutcome,
+        today: Optional[str] = None,
+        at: Optional[str] = None,
+    ) -> None:
         key = today_key(today)
         days = self._read_days()
         entry = days.get(key)
         days[key] = entry if isinstance(entry, dict) else {}
         days[key][outcome.value] = _counter(days[key], outcome.value) + 1
+        events = days[key].get("events")
+        days[key]["events"] = events if isinstance(events, list) else []
+        days[key]["events"].append(
+            [at or datetime.now().strftime("%H:%M"), outcome.value]
+        )
         for stale in sorted(days)[:-HISTORY_DAYS]:
             del days[stale]
         self._write(days)
+
+    def load_events(self, today: Optional[str] = None) -> list[tuple[int, str]]:
+        """The day's outcomes with their minute of the day, oldest first."""
+        entry = self._read_days().get(today_key(today), {})
+        if not isinstance(entry, dict) or not isinstance(
+            entry.get("events"), list
+        ):
+            return []
+        events = []
+        for item in entry["events"]:
+            if not isinstance(item, (list, tuple)) or len(item) != 2:
+                continue
+            raw_time, outcome = item
+            minutes = _event_minutes(raw_time)
+            if minutes is None or not isinstance(outcome, str):
+                continue
+            events.append((minutes, outcome))
+        return events
 
     def _write(self, days: dict) -> None:
         temporary = self.path.with_suffix(".tmp")

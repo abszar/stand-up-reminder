@@ -23,6 +23,8 @@ break window.
 - A **Statistics** popup with the day, the last seven days, and an
   adherence score for the week; the break window carries the day and week
   scores with a mood emoji.
+- A day timeline on both popups: one colored dot per break outcome, placed
+  by time of day.
 - Keyboard shortcuts and optional sound cues.
 - Other monitors dim while the break window is showing.
 - Active-time or wall-clock handling for lock and suspend periods.

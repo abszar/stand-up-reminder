@@ -69,7 +69,7 @@ Version: $version
 Section: utils
 Priority: optional
 Architecture: $architecture
-Depends: python3 (>= 3.10), python3-gi, gir1.2-gtk-3.0, gir1.2-ayatanaappindicator3-0.1
+Depends: python3 (>= 3.10), python3-gi, python3-gi-cairo, gir1.2-gtk-3.0, gir1.2-ayatanaappindicator3-0.1
 Recommends: gnome-shell-extension-appindicator, gir1.2-gsound-1.0
 Maintainer: Abdelali Bourassine <abszar@users.noreply.github.com>
 Homepage: https://github.com/abszar/stand-up-reminder

@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import sys
 from dataclasses import dataclass, replace
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from typing import Mapping, Optional, Sequence
 
@@ -40,6 +40,7 @@ from .stats import (
     rating_label,
     score_line,
     summary_label,
+    timeline_layout,
     today_key,
     week_label,
 )
@@ -50,6 +51,25 @@ APP_NAME = "Stand Up Reminder"
 ICON_NAME = "stand-up-reminder-symbolic"
 IDLE_POLL_SECONDS = 5
 PAUSE_PRESETS = (30 * 60, 60 * 60)
+
+# One dot color per recorded outcome, on the break-card palette.
+TIMELINE_COLORS = {
+    "taken": "#7bc47f",
+    "away": "#8fb3a9",
+    "missed": "#e05d5d",
+    "skipped": "#f2a65a",
+    "snoozed": "#c9ddd5",
+}
+TIMELINE_TRACK_COLOR = "#18312e"
+
+
+def hex_rgb(color: str) -> tuple[float, float, float]:
+    value = color.lstrip("#")
+    return (
+        int(value[0:2], 16) / 255,
+        int(value[2:4], 16) / 255,
+        int(value[4:6], 16) / 255,
+    )
 
 
 def format_duration(seconds: int) -> str:
@@ -182,6 +202,46 @@ def break_progress_fraction(seconds: int, total_seconds: int) -> float:
     return min(1.0, max(0.0, float(seconds) / float(total_seconds)))
 
 
+class TimelineStrip(Gtk.DrawingArea):
+    """A horizontal day track with one colored dot per recorded outcome."""
+
+    def __init__(self, height: int = 26, dot_radius: float = 5.0) -> None:
+        super().__init__()
+        self._points: list[tuple[float, str]] = []
+        self._dot_radius = dot_radius
+        self.set_size_request(-1, height)
+        self.connect("draw", self._on_draw)
+
+    def set_points(self, points: Sequence[tuple[float, str]]) -> None:
+        self._points = list(points)
+        self.queue_draw()
+
+    def _on_draw(self, _area, context) -> bool:
+        width = self.get_allocated_width()
+        height = self.get_allocated_height()
+        margin = self._dot_radius + 3
+        track = width - 2 * margin
+        if track <= 0:
+            return False
+        middle = height / 2
+        context.set_line_width(4)
+        context.set_line_cap(1)  # cairo.LINE_CAP_ROUND
+        context.set_source_rgb(*hex_rgb(TIMELINE_TRACK_COLOR))
+        context.move_to(margin, middle)
+        context.line_to(width - margin, middle)
+        context.stroke()
+        for fraction, outcome in self._points:
+            color = TIMELINE_COLORS.get(outcome)
+            if color is None:
+                continue
+            context.set_source_rgb(*hex_rgb(color))
+            context.arc(
+                margin + fraction * track, middle, self._dot_radius, 0, 6.2832
+            )
+            context.fill()
+        return False
+
+
 class DimmerWindow(Gtk.Window):
     """A dark cover for monitors that are not showing the break card."""
 
@@ -311,6 +371,8 @@ class BreakWindow(Gtk.ApplicationWindow):
         self.scores.set_xalign(0.0)
         self.scores.get_style_context().add_class("break-scores")
 
+        self.timeline = TimelineStrip()
+
         card.pack_start(self.eyebrow, False, False, 0)
         card.pack_start(self.countdown, True, True, 0)
         card.pack_start(self.away, False, False, 0)
@@ -318,6 +380,7 @@ class BreakWindow(Gtk.ApplicationWindow):
         card.pack_start(prompt, False, False, 0)
         card.pack_start(self.break_actions, False, False, 0)
         card.pack_start(self.return_actions, False, False, 0)
+        card.pack_start(self.timeline, False, False, 0)
         card.pack_start(self.scores, False, False, 0)
         card.pack_start(self.shortcuts, False, False, 0)
         self.add(card)
@@ -330,6 +393,9 @@ class BreakWindow(Gtk.ApplicationWindow):
 
     def set_scores(self, text: str) -> None:
         self.scores.set_text(text)
+
+    def set_timeline(self, points: Sequence[tuple[float, str]]) -> None:
+        self.timeline.set_points(points)
 
     def set_snooze_seconds(self, snooze_seconds: int) -> None:
         self.snooze_button.set_label(
@@ -438,6 +504,36 @@ class StatsWindow(Gtk.Window):
         self.verdict.set_line_wrap(True)
         self.verdict.get_style_context().add_class("break-away")
 
+        self.timeline = TimelineStrip(height=34, dot_radius=6.0)
+
+        hours = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        self.timeline_start = Gtk.Label(label="")
+        self.timeline_start.set_xalign(0.0)
+        self.timeline_start.set_hexpand(True)
+        self.timeline_start.get_style_context().add_class("stats-day-name")
+        self.timeline_end = Gtk.Label(label="")
+        self.timeline_end.set_xalign(1.0)
+        self.timeline_end.get_style_context().add_class("stats-day-name")
+        hours.pack_start(self.timeline_start, True, True, 0)
+        hours.pack_start(self.timeline_end, True, True, 0)
+        self.timeline_hours = hours
+
+        legend = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=14)
+        for outcome, word in (
+            ("taken", _("taken")),
+            ("away", _("away")),
+            ("missed", _("missed")),
+            ("skipped", _("skipped")),
+            ("snoozed", _("snoozed")),
+        ):
+            entry = Gtk.Label()
+            entry.set_markup(
+                f'<span foreground="{TIMELINE_COLORS[outcome]}">●</span> {word}'
+            )
+            entry.get_style_context().add_class("stats-day-name")
+            legend.pack_start(entry, False, False, 0)
+        self.timeline_legend = legend
+
         self.days_grid = Gtk.Grid()
         self.days_grid.set_column_homogeneous(True)
         self.days_grid.set_column_spacing(8)
@@ -460,6 +556,9 @@ class StatsWindow(Gtk.Window):
         card.pack_start(eyebrow, False, False, 0)
         card.pack_start(self.score, False, False, 0)
         card.pack_start(self.verdict, False, False, 0)
+        card.pack_start(self.timeline, False, False, 4)
+        card.pack_start(self.timeline_hours, False, False, 0)
+        card.pack_start(self.timeline_legend, False, False, 0)
         card.pack_start(self.days_grid, False, False, 8)
         card.pack_start(self.today_line, False, False, 0)
         card.pack_start(self.week_line, False, False, 0)
@@ -476,8 +575,20 @@ class StatsWindow(Gtk.Window):
             return True
         return False
 
-    def update_stats(self, week: Sequence[tuple[str, DailyStats]]) -> None:
+    def update_stats(
+        self,
+        week: Sequence[tuple[str, DailyStats]],
+        timeline: tuple[int, int, list[tuple[float, str]]],
+    ) -> None:
         """Refresh from the week's day keys and stats, today last."""
+        start_minutes, end_minutes, points = timeline
+        self.timeline.set_points(points)
+        self.timeline_start.set_text(
+            f"{start_minutes // 60:02d}:{start_minutes % 60:02d}"
+        )
+        self.timeline_end.set_text(
+            f"{end_minutes // 60:02d}:{end_minutes % 60:02d}"
+        )
         today_stats = week[-1][1] if week else DailyStats()
         week_total = aggregate_stats(stats for _day, stats in week)
         percent = adherence_percent(week_total)
@@ -1007,6 +1118,8 @@ class ReminderApplication(Gtk.Application):
         snapshot = self.scheduler.snapshot()
         if snapshot.locked or snapshot.phase is not Phase.WORK:
             return
+        # Bring the day track up to the present before it becomes visible.
+        self._refresh_score_line()
         self.window.update_state(
             snapshot.phase,
             snapshot.seconds_remaining,
@@ -1027,6 +1140,7 @@ class ReminderApplication(Gtk.Application):
         snapshot = self.scheduler.snapshot()
         if snapshot.locked:
             return
+        self._refresh_score_line()
         self.window.update_state(
             snapshot.phase,
             snapshot.seconds_remaining,
@@ -1145,6 +1259,14 @@ class ReminderApplication(Gtk.Application):
         if self.stats_window and self.stats_window.get_visible():
             self._refresh_stats_window()
 
+    @staticmethod
+    def _now_minutes() -> int:
+        now = datetime.now()
+        return now.hour * 60 + now.minute
+
+    def _today_timeline(self, day: str) -> tuple[int, int, list]:
+        return timeline_layout(self.stats.load_events(day), self._now_minutes())
+
     def _refresh_score_line(self) -> None:
         """Recompute the day and week adherence shown on the break window."""
         if self.stats is None or self.window is None:
@@ -1158,6 +1280,7 @@ class ReminderApplication(Gtk.Application):
                 adherence_percent(aggregate_stats(stats_list)),
             )
         )
+        self.window.set_timeline(self._today_timeline(days[-1])[2])
 
     def _open_stats_window(self, _item) -> None:
         if self.stats_window is None:
@@ -1171,7 +1294,8 @@ class ReminderApplication(Gtk.Application):
             return
         days = last_days(WEEK_DAYS)
         self.stats_window.update_stats(
-            list(zip(days, self.stats.load_days(days)))
+            list(zip(days, self.stats.load_days(days))),
+            self._today_timeline(days[-1]),
         )
 
     def _stats_label(self, day: str) -> str:
