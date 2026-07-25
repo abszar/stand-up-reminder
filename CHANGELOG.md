@@ -10,7 +10,8 @@ All notable changes to Stand Up Reminder are documented in this file.
   recorded outcome is stored with its time and drawn as a colored dot on a
   track spanning the worked part of the day (green taken, gray-teal away,
   red missed, orange skipped, pale snoozed). The statistics popup adds the
-  track's start and end times and a color legend.
+  track's start and end times and a color legend. The whole timeline block
+  stays hidden until the day has its first recorded outcome.
 
 ## [1.2.0] - 2026-07-25
 

@@ -372,6 +372,7 @@ class BreakWindow(Gtk.ApplicationWindow):
         self.scores.get_style_context().add_class("break-scores")
 
         self.timeline = TimelineStrip()
+        self.timeline.set_no_show_all(True)
 
         card.pack_start(self.eyebrow, False, False, 0)
         card.pack_start(self.countdown, True, True, 0)
@@ -396,6 +397,9 @@ class BreakWindow(Gtk.ApplicationWindow):
 
     def set_timeline(self, points: Sequence[tuple[float, str]]) -> None:
         self.timeline.set_points(points)
+        # A day without recorded outcomes shows no track at all rather
+        # than a bare line that reads as a divider.
+        self.timeline.set_visible(bool(points))
 
     def set_snooze_seconds(self, snooze_seconds: int) -> None:
         self.snooze_button.set_label(
@@ -505,6 +509,7 @@ class StatsWindow(Gtk.Window):
         self.verdict.get_style_context().add_class("break-away")
 
         self.timeline = TimelineStrip(height=34, dot_radius=6.0)
+        self.timeline.set_no_show_all(True)
 
         hours = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
         self.timeline_start = Gtk.Label(label="")
@@ -516,6 +521,7 @@ class StatsWindow(Gtk.Window):
         self.timeline_end.get_style_context().add_class("stats-day-name")
         hours.pack_start(self.timeline_start, True, True, 0)
         hours.pack_start(self.timeline_end, True, True, 0)
+        hours.set_no_show_all(True)
         self.timeline_hours = hours
 
         legend = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=14)
@@ -532,6 +538,7 @@ class StatsWindow(Gtk.Window):
             )
             entry.get_style_context().add_class("stats-day-name")
             legend.pack_start(entry, False, False, 0)
+        legend.set_no_show_all(True)
         self.timeline_legend = legend
 
         self.days_grid = Gtk.Grid()
@@ -589,6 +596,15 @@ class StatsWindow(Gtk.Window):
         self.timeline_end.set_text(
             f"{end_minutes // 60:02d}:{end_minutes % 60:02d}"
         )
+        # The whole timeline block appears only once the day has dots.
+        if points:
+            self.timeline.show()
+            self.timeline_hours.show_all()
+            self.timeline_legend.show_all()
+        else:
+            self.timeline.hide()
+            self.timeline_hours.hide()
+            self.timeline_legend.hide()
         today_stats = week[-1][1] if week else DailyStats()
         week_total = aggregate_stats(stats for _day, stats in week)
         percent = adherence_percent(week_total)
