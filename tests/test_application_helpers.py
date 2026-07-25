@@ -8,6 +8,7 @@ from stand_up_reminder.application import (
     break_progress_fraction,
     duration_label,
     format_duration,
+    idle_credit_threshold,
     indicator_label,
     is_wayland_session,
 )
@@ -52,6 +53,14 @@ class BreakProgressTests(unittest.TestCase):
         self.assertEqual(break_progress_fraction(200, 120), 1.0)
         self.assertEqual(break_progress_fraction(-1, 120), 0.0)
         self.assertEqual(break_progress_fraction(10, 0), 0.0)
+
+
+class IdleCreditThresholdTests(unittest.TestCase):
+    def test_uses_the_configured_idle_threshold(self):
+        self.assertEqual(idle_credit_threshold(10 * 60, 2 * 60), 10 * 60)
+
+    def test_never_drops_below_the_break_length(self):
+        self.assertEqual(idle_credit_threshold(5 * 60, 10 * 60), 10 * 60)
 
 
 class WaylandDetectionTests(unittest.TestCase):
@@ -109,12 +118,28 @@ class BreakViewTests(unittest.TestCase):
         self.assertFalse(view.can_snooze)
         self.assertFalse(view.can_skip)
         self.assertTrue(view.can_return)
+        self.assertTrue(view.can_miss)
+
+    def test_active_break_cannot_be_declared_missed(self):
+        view = application.break_view(Phase.BREAK, 75, 45)
+        self.assertFalse(view.can_miss)
+
+    def test_work_phase_shows_the_pre_break_warning(self):
+        view = application.break_view(Phase.WORK, 15, 0)
+        self.assertEqual(view.title, "Break coming up")
+        self.assertEqual(view.countdown, "00:15")
+        self.assertEqual(view.away, "Time to stand up in 00:15")
+        self.assertFalse(view.can_snooze)
+        self.assertFalse(view.can_skip)
+        self.assertFalse(view.can_return)
+        self.assertFalse(view.can_miss)
 
     def test_snoozed_view_has_no_popup_actions(self):
         view = application.break_view(Phase.SNOOZED, 5 * 60, 0)
         self.assertFalse(view.can_snooze)
         self.assertFalse(view.can_skip)
         self.assertFalse(view.can_return)
+        self.assertFalse(view.can_miss)
 
 
 class IndicatorViewTests(unittest.TestCase):
@@ -171,8 +196,10 @@ class StatsSummaryCacheTests(unittest.TestCase):
         stats.load.return_value = stored or DailyStats(taken=2)
         return SimpleNamespace(
             stats=stats,
+            stats_window=None,
             _stats_day="2026-07-20",
             _stats_summary="Today: 2 breaks taken",
+            _refresh_score_line=Mock(),
         )
 
     def test_summary_is_not_reloaded_within_the_same_day(self):

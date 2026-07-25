@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import sys
 from dataclasses import dataclass, replace
+from datetime import date
 from pathlib import Path
 from typing import Mapping, Optional, Sequence
 
@@ -23,17 +24,30 @@ from .i18n import _, ngettext
 from .scheduler import Phase, Scheduler, TimingMode, Transition
 from .settings import (
     BREAK_PRESETS,
+    IDLE_CREDIT_PRESETS,
     WORK_PRESETS,
     Settings,
     SettingsStore,
 )
-from .stats import BreakOutcome, StatsStore, summary_label, today_key
+from .stats import (
+    WEEK_DAYS,
+    BreakOutcome,
+    DailyStats,
+    StatsStore,
+    adherence_percent,
+    aggregate_stats,
+    last_days,
+    rating_label,
+    score_line,
+    summary_label,
+    today_key,
+    week_label,
+)
 
 
 APP_ID = "io.github.abdelali.StandUpReminder"
 APP_NAME = "Stand Up Reminder"
 ICON_NAME = "stand-up-reminder-symbolic"
-WARNING_NOTIFICATION_ID = "break-warning"
 IDLE_POLL_SECONDS = 5
 PAUSE_PRESETS = (30 * 60, 60 * 60)
 
@@ -58,6 +72,13 @@ def duration_label(seconds: int) -> str:
     return " ".join(parts)
 
 
+def idle_credit_threshold(
+    idle_credit_seconds: float, break_seconds: float
+) -> float:
+    """Idle time that earns a break credit, never shorter than a break."""
+    return max(float(idle_credit_seconds), float(break_seconds))
+
+
 def is_wayland_session(environ: Mapping[str, str]) -> bool:
     backend = environ.get("GDK_BACKEND", "").strip().lower()
     if backend:
@@ -73,9 +94,20 @@ class BreakView:
     can_snooze: bool
     can_skip: bool
     can_return: bool
+    can_miss: bool = False
 
 
 def break_view(phase: Phase, seconds_remaining: int, away_seconds: int) -> BreakView:
+    # A work phase means the window is counting down to the break itself.
+    if phase is Phase.WORK:
+        return BreakView(
+            title=_("Break coming up"),
+            countdown=format_duration(seconds_remaining),
+            away=_("Time to stand up in %s") % format_duration(seconds_remaining),
+            can_snooze=False,
+            can_skip=False,
+            can_return=False,
+        )
     active = phase is Phase.BREAK
     awaiting = phase is Phase.AWAITING_RETURN
     return BreakView(
@@ -85,6 +117,7 @@ def break_view(phase: Phase, seconds_remaining: int, away_seconds: int) -> Break
         can_snooze=active,
         can_skip=active,
         can_return=awaiting,
+        can_miss=awaiting,
     )
 
 
@@ -179,10 +212,12 @@ class BreakWindow(Gtk.ApplicationWindow):
         on_snooze,
         on_skip,
         on_return,
+        on_miss,
         wayland: bool = False,
     ) -> None:
         super().__init__(application=application, title=_("Time to stand up"))
         self.break_seconds = break_seconds
+        self.warning_seconds = 0
         self._wayland = wayland
         self.set_role("stand-up-break")
         self.set_default_size(440, 380)
@@ -247,16 +282,34 @@ class BreakWindow(Gtk.ApplicationWindow):
         self.break_actions.pack_start(self.snooze_button, True, True, 0)
         self.break_actions.pack_start(self.skip_button, True, True, 0)
 
+        self.return_actions = Gtk.Box(
+            orientation=Gtk.Orientation.HORIZONTAL, spacing=8
+        )
+
         self.return_button = Gtk.Button(
             label=_("I'm back — start the work timer")
         )
+        self.return_button.set_hexpand(True)
         self.return_button.set_no_show_all(True)
         self.return_button.get_style_context().add_class("break-return")
         self.return_button.connect("clicked", on_return)
 
+        self.miss_button = Gtk.Button(label=_("I didn't take this break"))
+        self.miss_button.set_hexpand(True)
+        self.miss_button.set_no_show_all(True)
+        self.miss_button.get_style_context().add_class("break-skip")
+        self.miss_button.connect("clicked", on_miss)
+
+        self.return_actions.pack_start(self.return_button, True, True, 0)
+        self.return_actions.pack_start(self.miss_button, True, True, 0)
+
         self.shortcuts = Gtk.Label()
         self.shortcuts.set_xalign(0.0)
         self.shortcuts.get_style_context().add_class("break-shortcuts")
+
+        self.scores = Gtk.Label()
+        self.scores.set_xalign(0.0)
+        self.scores.get_style_context().add_class("break-scores")
 
         card.pack_start(self.eyebrow, False, False, 0)
         card.pack_start(self.countdown, True, True, 0)
@@ -264,12 +317,19 @@ class BreakWindow(Gtk.ApplicationWindow):
         card.pack_start(self.progress, False, False, 2)
         card.pack_start(prompt, False, False, 0)
         card.pack_start(self.break_actions, False, False, 0)
-        card.pack_start(self.return_button, False, False, 0)
+        card.pack_start(self.return_actions, False, False, 0)
+        card.pack_start(self.scores, False, False, 0)
         card.pack_start(self.shortcuts, False, False, 0)
         self.add(card)
 
     def set_break_seconds(self, break_seconds: int) -> None:
         self.break_seconds = break_seconds
+
+    def set_warning_seconds(self, warning_seconds: int) -> None:
+        self.warning_seconds = warning_seconds
+
+    def set_scores(self, text: str) -> None:
+        self.scores.set_text(text)
 
     def set_snooze_seconds(self, snooze_seconds: int) -> None:
         self.snooze_button.set_label(
@@ -318,17 +378,21 @@ class BreakWindow(Gtk.ApplicationWindow):
         self.eyebrow.set_text(view.title.upper())
         self.countdown.set_text(view.countdown)
         self.away.set_text(view.away)
+        total = self.warning_seconds if phase is Phase.WORK else self.break_seconds
         self.progress.set_fraction(
-            break_progress_fraction(seconds_remaining, self.break_seconds)
+            break_progress_fraction(seconds_remaining, total)
         )
         self.snooze_button.set_visible(view.can_snooze)
         self.skip_button.set_visible(view.can_skip)
         self.return_button.set_visible(view.can_return)
-        self.shortcuts.set_text(
-            _("Enter to confirm")
-            if view.can_return
-            else _("S to snooze · K to skip")
-        )
+        self.miss_button.set_visible(view.can_miss)
+        if view.can_return:
+            shortcuts = _("Enter to confirm")
+        elif view.can_snooze:
+            shortcuts = _("S to snooze · K to skip")
+        else:
+            shortcuts = ""
+        self.shortcuts.set_text(shortcuts)
 
     def enforce_front(self) -> None:
         self.set_keep_above(True)
@@ -340,11 +404,106 @@ class BreakWindow(Gtk.ApplicationWindow):
         self.present()
 
 
+class StatsWindow(Gtk.Window):
+    """A closable statistics card in the visual language of the break card."""
+
+    def __init__(self) -> None:
+        super().__init__(type=Gtk.WindowType.TOPLEVEL, title=_("Statistics"))
+        self.set_default_size(560, 540)
+        self.set_resizable(False)
+        self.set_decorated(False)
+        self.set_position(Gtk.WindowPosition.CENTER)
+        self.set_keep_above(True)
+        self.set_skip_taskbar_hint(True)
+        self.set_skip_pager_hint(True)
+        self.set_type_hint(Gdk.WindowTypeHint.DIALOG)
+        self.get_style_context().add_class("break-window")
+        self.connect("delete-event", self._on_delete)
+        self.connect("key-press-event", self._on_key_press)
+
+        card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        card.set_border_width(30)
+        card.get_style_context().add_class("break-card")
+
+        eyebrow = Gtk.Label(label=_("Statistics").upper())
+        eyebrow.set_xalign(0.0)
+        eyebrow.get_style_context().add_class("break-eyebrow")
+
+        self.score = Gtk.Label(label="")
+        self.score.set_xalign(0.0)
+        self.score.get_style_context().add_class("stats-score")
+
+        self.verdict = Gtk.Label(label="")
+        self.verdict.set_xalign(0.0)
+        self.verdict.set_line_wrap(True)
+        self.verdict.get_style_context().add_class("break-away")
+
+        self.days_grid = Gtk.Grid()
+        self.days_grid.set_column_homogeneous(True)
+        self.days_grid.set_column_spacing(8)
+        self.days_grid.set_row_spacing(2)
+
+        self.today_line = Gtk.Label(label="")
+        self.today_line.set_xalign(0.0)
+        self.today_line.set_line_wrap(True)
+        self.today_line.get_style_context().add_class("break-prompt")
+
+        self.week_line = Gtk.Label(label="")
+        self.week_line.set_xalign(0.0)
+        self.week_line.set_line_wrap(True)
+        self.week_line.get_style_context().add_class("break-prompt")
+
+        close_button = Gtk.Button(label=_("Close"))
+        close_button.get_style_context().add_class("break-return")
+        close_button.connect("clicked", lambda *_args: self.hide())
+
+        card.pack_start(eyebrow, False, False, 0)
+        card.pack_start(self.score, False, False, 0)
+        card.pack_start(self.verdict, False, False, 0)
+        card.pack_start(self.days_grid, False, False, 8)
+        card.pack_start(self.today_line, False, False, 0)
+        card.pack_start(self.week_line, False, False, 0)
+        card.pack_start(close_button, False, False, 6)
+        self.add(card)
+
+    def _on_delete(self, *_args) -> bool:
+        self.hide()
+        return True
+
+    def _on_key_press(self, _window, event) -> bool:
+        if event.keyval == Gdk.KEY_Escape:
+            self.hide()
+            return True
+        return False
+
+    def update_stats(self, week: Sequence[tuple[str, DailyStats]]) -> None:
+        """Refresh from the week's day keys and stats, today last."""
+        today_stats = week[-1][1] if week else DailyStats()
+        week_total = aggregate_stats(stats for _day, stats in week)
+        percent = adherence_percent(week_total)
+        self.score.set_text("—" if percent is None else f"{percent}%")
+        self.verdict.set_text(rating_label(percent))
+        self.today_line.set_text(summary_label(today_stats))
+        self.week_line.set_text(week_label(week_total))
+
+        for child in self.days_grid.get_children():
+            child.destroy()
+        for column, (day, stats) in enumerate(week):
+            name = Gtk.Label(label=date.fromisoformat(day).strftime("%a"))
+            name.get_style_context().add_class("stats-day-name")
+            count = Gtk.Label(label=str(stats.taken))
+            count.get_style_context().add_class("stats-day-count")
+            self.days_grid.attach(name, column, 0, 1, 1)
+            self.days_grid.attach(count, column, 1, 1, 1)
+        self.days_grid.show_all()
+
+
 class ReminderApplication(Gtk.Application):
     def __init__(self) -> None:
         super().__init__(application_id=APP_ID, flags=Gio.ApplicationFlags.FLAGS_NONE)
         self.scheduler: Optional[Scheduler] = None
         self.window: Optional[BreakWindow] = None
+        self.stats_window: Optional[StatsWindow] = None
         self.settings = Settings()
         self.indicator = None
         self.stats = None
@@ -358,6 +517,7 @@ class ReminderApplication(Gtk.Application):
         self.wall_item = None
         self.work_items: dict = {}
         self.break_items: dict = {}
+        self.idle_credit_items: dict = {}
         self.countdown_item = None
         self.sound_item = None
         self.idle_item = None
@@ -368,6 +528,7 @@ class ReminderApplication(Gtk.Application):
         self._sound = None
         self._stats_day = ""
         self._stats_summary = ""
+        self._score_day = ""
         self._indicator_label = None
         self._idle_credit_pending = False
         self._suppress_menu_events = False
@@ -438,6 +599,31 @@ class ReminderApplication(Gtk.Application):
                 color: #c9ddd5;
                 font-family: Cantarell, sans-serif;
                 font-size: 16px;
+            }
+            .break-scores {
+                color: #c9ddd5;
+                font-family: Cantarell, sans-serif;
+                font-size: 13px;
+                letter-spacing: 1px;
+            }
+            .stats-score {
+                color: #f7f2e7;
+                font-family: "DejaVu Sans Mono", monospace;
+                font-size: 52px;
+                font-weight: 700;
+            }
+            .stats-day-name {
+                color: #8fb3a9;
+                font-family: Cantarell, sans-serif;
+                font-size: 12px;
+                font-weight: 700;
+                letter-spacing: 1px;
+            }
+            .stats-day-count {
+                color: #f7f2e7;
+                font-family: "DejaVu Sans Mono", monospace;
+                font-size: 22px;
+                font-weight: 700;
             }
             .break-shortcuts {
                 color: #8fb3a9;
@@ -530,10 +716,13 @@ class ReminderApplication(Gtk.Application):
             self._snooze_break,
             self._skip_break,
             self._confirm_return,
+            self._missed_break,
             wayland=self._wayland,
         )
         self.window.set_snooze_seconds(int(snooze_seconds))
         self.window.set_work_seconds(int(work_seconds))
+        self.window.set_warning_seconds(int(self.scheduler.warning_seconds))
+        self._refresh_score_line()
         self._build_indicator()
         self._initialize_sound()
         self._connect_lock_monitor()
@@ -577,6 +766,10 @@ class ReminderApplication(Gtk.Application):
         self.stats_item = Gtk.MenuItem(label=_("No breaks yet today"))
         self.stats_item.set_sensitive(False)
         menu.append(self.stats_item)
+
+        stats_page_item = Gtk.MenuItem(label=_("Statistics"))
+        stats_page_item.connect("activate", self._open_stats_window)
+        menu.append(stats_page_item)
         menu.append(Gtk.SeparatorMenuItem())
 
         self.start_item = Gtk.MenuItem(label=_("Start break now"))
@@ -685,6 +878,21 @@ class ReminderApplication(Gtk.Application):
         self.idle_item.connect("toggled", self._idle_toggled)
         options_menu.append(self.idle_item)
 
+        idle_credit_item = Gtk.MenuItem(label=_("Count away after"))
+        idle_credit_menu = Gtk.Menu()
+        group = None
+        for seconds in IDLE_CREDIT_PRESETS:
+            entry = Gtk.RadioMenuItem.new_with_label_from_widget(
+                group, duration_label(seconds)
+            )
+            group = group or entry
+            entry.set_active(seconds == self.settings.idle_credit_seconds)
+            entry.connect("toggled", self._idle_credit_seconds_changed, seconds)
+            self.idle_credit_items[seconds] = entry
+            idle_credit_menu.append(entry)
+        idle_credit_item.set_submenu(idle_credit_menu)
+        options_menu.append(idle_credit_item)
+
         self.sound_item = Gtk.CheckMenuItem(label=_("Play a sound at each break"))
         self.sound_item.set_active(self.settings.sound_enabled)
         self.sound_item.connect("toggled", self._sound_toggled)
@@ -764,13 +972,15 @@ class ReminderApplication(Gtk.Application):
         idle_seconds = self._idle_seconds()
         if idle_seconds is None:
             return GLib.SOURCE_CONTINUE
-        threshold = self.scheduler.break_seconds
+        threshold = idle_credit_threshold(
+            self.settings.idle_credit_seconds, self.scheduler.break_seconds
+        )
         if idle_seconds >= threshold:
             self._idle_credit_pending = True
         elif self._idle_credit_pending:
             self._idle_credit_pending = False
             if self.scheduler.credit_idle_break(threshold):
-                self._record_outcome(BreakOutcome.TAKEN)
+                self._record_outcome(BreakOutcome.AWAY)
                 self._update_interface()
         return GLib.SOURCE_CONTINUE
 
@@ -782,9 +992,8 @@ class ReminderApplication(Gtk.Application):
 
     def _apply_transition(self, transition: Optional[Transition]) -> None:
         if transition is Transition.WARN_BREAK:
-            self._notify_upcoming_break()
+            self._show_warning()
         elif transition is Transition.START_BREAK:
-            self.withdraw_notification(WARNING_NOTIFICATION_ID)
             self._play_sound("message-new-instant")
             self._show_break()
         elif transition is Transition.BREAK_COMPLETE:
@@ -793,14 +1002,18 @@ class ReminderApplication(Gtk.Application):
             self.window.hide()
             self._hide_dimmers()
 
-    def _notify_upcoming_break(self) -> None:
-        notification = Gio.Notification.new(_("Break coming up"))
-        notification.set_body(
-            _("Time to stand up in %s")
-            % duration_label(int(self.scheduler.warning_seconds))
+    def _show_warning(self) -> None:
+        """Open the break window early, counting down to the break itself."""
+        snapshot = self.scheduler.snapshot()
+        if snapshot.locked or snapshot.phase is not Phase.WORK:
+            return
+        self.window.update_state(
+            snapshot.phase,
+            snapshot.seconds_remaining,
+            snapshot.away_seconds,
         )
-        notification.set_priority(Gio.NotificationPriority.NORMAL)
-        self.send_notification(WARNING_NOTIFICATION_ID, notification)
+        self.window.show_all()
+        self.window.enforce_front()
 
     def _play_sound(self, event_id: str) -> None:
         if not self.settings.sound_enabled or self._sound is None:
@@ -880,7 +1093,10 @@ class ReminderApplication(Gtk.Application):
         self.reset_item.set_sensitive(view.can_reset_work)
         self.pause_item.set_sensitive(view.can_pause)
         self.resume_item.set_sensitive(view.can_resume)
-        self.stats_item.set_label(self._stats_label(today_key()))
+        today = today_key()
+        self.stats_item.set_label(self._stats_label(today))
+        if self._score_day != today:
+            self._refresh_score_line()
 
         label = indicator_label(
             snapshot.phase,
@@ -901,6 +1117,23 @@ class ReminderApplication(Gtk.Application):
                 snapshot.away_seconds,
             )
             self.window.set_keep_above(True)
+        elif self.window and self.window.get_visible():
+            # The window is open as the pre-break countdown; keep it current
+            # and close it if a pause, reset, or lock ended the warning.
+            in_warning = (
+                snapshot.phase is Phase.WORK
+                and self.scheduler.warning_seconds > 0
+                and snapshot.seconds_remaining <= self.scheduler.warning_seconds
+            )
+            if in_warning and not snapshot.locked:
+                self.window.update_state(
+                    snapshot.phase,
+                    snapshot.seconds_remaining,
+                    snapshot.away_seconds,
+                )
+            else:
+                self.window.hide()
+                self._hide_dimmers()
 
     def _record_outcome(self, outcome: BreakOutcome) -> None:
         if self.stats is None:
@@ -908,6 +1141,38 @@ class ReminderApplication(Gtk.Application):
         self.stats.record(outcome)
         self._stats_day = today_key()
         self._stats_summary = summary_label(self.stats.load(self._stats_day))
+        self._refresh_score_line()
+        if self.stats_window and self.stats_window.get_visible():
+            self._refresh_stats_window()
+
+    def _refresh_score_line(self) -> None:
+        """Recompute the day and week adherence shown on the break window."""
+        if self.stats is None or self.window is None:
+            return
+        days = last_days(WEEK_DAYS)
+        stats_list = self.stats.load_days(days)
+        self._score_day = days[-1]
+        self.window.set_scores(
+            score_line(
+                adherence_percent(stats_list[-1]),
+                adherence_percent(aggregate_stats(stats_list)),
+            )
+        )
+
+    def _open_stats_window(self, _item) -> None:
+        if self.stats_window is None:
+            self.stats_window = StatsWindow()
+        self._refresh_stats_window()
+        self.stats_window.show_all()
+        self.stats_window.present()
+
+    def _refresh_stats_window(self) -> None:
+        if self.stats_window is None or self.stats is None:
+            return
+        days = last_days(WEEK_DAYS)
+        self.stats_window.update_stats(
+            list(zip(days, self.stats.load_days(days)))
+        )
 
     def _stats_label(self, day: str) -> str:
         """Cached daily summary, re-read only when the counters can differ.
@@ -939,6 +1204,13 @@ class ReminderApplication(Gtk.Application):
         transition = self.scheduler.confirm_return()
         if transition is Transition.END_BREAK:
             self._record_outcome(BreakOutcome.TAKEN)
+        self._apply_transition(transition)
+        self._update_interface()
+
+    def _missed_break(self, _button) -> None:
+        transition = self.scheduler.confirm_return()
+        if transition is Transition.END_BREAK:
+            self._record_outcome(BreakOutcome.MISSED)
         self._apply_transition(transition)
         self._update_interface()
 
@@ -997,6 +1269,11 @@ class ReminderApplication(Gtk.Application):
     def _idle_toggled(self, item) -> None:
         self._save_settings(idle_reset_enabled=item.get_active())
 
+    def _idle_credit_seconds_changed(self, item, seconds: int) -> None:
+        if self._suppress_menu_events or not item.get_active():
+            return
+        self._save_settings(idle_credit_seconds=seconds)
+
     def _sound_toggled(self, item) -> None:
         self._save_settings(sound_enabled=item.get_active())
 
@@ -1013,6 +1290,8 @@ class ReminderApplication(Gtk.Application):
             self.indicator.set_status(AyatanaAppIndicator3.IndicatorStatus.PASSIVE)
         for dimmer in self._dimmers:
             dimmer.destroy()
+        if self.stats_window:
+            self.stats_window.destroy()
         if self.window:
             self.window.destroy()
         self.quit()

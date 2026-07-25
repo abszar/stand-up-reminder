@@ -10,13 +10,19 @@ break window.
 - Configurable work intervals and break lengths, defaulting to a 30-minute
   interval and a two-minute break.
 - Countdown to the next break shown next to the top-bar icon.
-- Desktop notification one minute before a break begins.
+- The break window opens 15 seconds early with a countdown to the break.
 - **Pause reminders** for 30 minutes, an hour, or until you resume.
 - Repeatable snooze that returns with a fresh break countdown.
 - **Skip this break** action that immediately starts a new work interval.
-- Explicit return confirmation after a completed break.
-- Long stretches away from the keyboard count as a break already taken.
-- Daily counts of breaks taken, skipped, and snoozed.
+- Explicit return confirmation after a completed break, with an
+  **I didn't take this break** button for breaks that slipped by.
+- Long stretches away from the keyboard count as a break already taken, after
+  a configurable threshold (10 minutes by default).
+- Daily counts of breaks taken, time-away credits, missed, skipped, and
+  snoozed.
+- A **Statistics** popup with the day, the last seven days, and an
+  adherence score for the week; the break window carries the day and week
+  scores with a mood emoji.
 - Keyboard shortcuts and optional sound cues.
 - Other monitors dim while the break window is showing.
 - Active-time or wall-clock handling for lock and suspend periods.
@@ -127,7 +133,8 @@ when it is read.
 | `work_seconds` | Length of a work interval |
 | `break_seconds` | Length of an enforced break |
 | `snooze_seconds` | Delay added by the snooze button |
-| `warning_seconds` | Notification lead time; `0` disables it |
+| `warning_seconds` | Pre-break countdown lead time; `0` disables it |
+| `idle_credit_seconds` | Idle time before an absence counts as a break; never shorter than the break length |
 | `idle_reset_enabled` | Count time away from the keyboard as a break |
 | `show_countdown` | Show the countdown next to the top-bar icon |
 | `sound_enabled` | Play a sound when a break starts and ends |

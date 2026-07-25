@@ -6,9 +6,9 @@
 #, fuzzy
 msgid ""
 msgstr ""
-"Project-Id-Version: Stand Up Reminder 1.1.0\n"
+"Project-Id-Version: Stand Up Reminder 1.2.0\n"
 "Report-Msgid-Bugs-To: https://github.com/abszar/stand-up-reminder/issues\n"
-"POT-Creation-Date: 2026-07-21 00:07+0200\n"
+"POT-Creation-Date: 2026-07-25 12:55+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE\n"
@@ -38,6 +38,15 @@ msgid "%d minute"
 msgid_plural "%d minutes"
 msgstr[0] ""
 msgstr[1] ""
+
+#: stand_up_reminder/application.py
+msgid "Break coming up"
+msgstr ""
+
+#: stand_up_reminder/application.py
+#, python-format
+msgid "Time to stand up in %s"
+msgstr ""
 
 #: stand_up_reminder/application.py
 msgid "Break complete"
@@ -96,6 +105,10 @@ msgid "I'm back — start the work timer"
 msgstr ""
 
 #: stand_up_reminder/application.py
+msgid "I didn't take this break"
+msgstr ""
+
+#: stand_up_reminder/application.py
 #, python-format
 msgid "Give me %s"
 msgstr ""
@@ -111,6 +124,14 @@ msgstr ""
 
 #: stand_up_reminder/application.py
 msgid "S to snooze · K to skip"
+msgstr ""
+
+#: stand_up_reminder/application.py
+msgid "Statistics"
+msgstr ""
+
+#: stand_up_reminder/application.py
+msgid "Close"
 msgstr ""
 
 #: stand_up_reminder/application.py
@@ -187,16 +208,11 @@ msgid "Count time away as a break"
 msgstr ""
 
 #: stand_up_reminder/application.py
+msgid "Count away after"
+msgstr ""
+
+#: stand_up_reminder/application.py
 msgid "Play a sound at each break"
-msgstr ""
-
-#: stand_up_reminder/application.py
-msgid "Break coming up"
-msgstr ""
-
-#: stand_up_reminder/application.py
-#, python-format
-msgid "Time to stand up in %s"
 msgstr ""
 
 #: stand_up_reminder/stats.py
@@ -205,6 +221,16 @@ msgid "%d break taken"
 msgid_plural "%d breaks taken"
 msgstr[0] ""
 msgstr[1] ""
+
+#: stand_up_reminder/stats.py
+#, python-format
+msgid "%d away"
+msgstr ""
+
+#: stand_up_reminder/stats.py
+#, python-format
+msgid "%d missed"
+msgstr ""
 
 #: stand_up_reminder/stats.py
 #, python-format
@@ -219,4 +245,33 @@ msgstr ""
 #: stand_up_reminder/stats.py
 #, python-format
 msgid "Today: %s"
+msgstr ""
+
+#: stand_up_reminder/stats.py
+msgid "No breaks this week"
+msgstr ""
+
+#: stand_up_reminder/stats.py
+#, python-format
+msgid "This week: %s"
+msgstr ""
+
+#: stand_up_reminder/stats.py
+msgid "No breaks due yet"
+msgstr ""
+
+#: stand_up_reminder/stats.py
+msgid "Excellent — you rarely miss a break"
+msgstr ""
+
+#: stand_up_reminder/stats.py
+msgid "Good — most breaks taken"
+msgstr ""
+
+#: stand_up_reminder/stats.py
+msgid "Could be better — many breaks slip by"
+msgstr ""
+
+#: stand_up_reminder/stats.py
+msgid "Time to stand up more often"
 msgstr ""

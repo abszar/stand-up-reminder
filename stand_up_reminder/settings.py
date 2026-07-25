@@ -12,15 +12,18 @@ from .scheduler import TimingMode
 DEFAULT_WORK_SECONDS = 30 * 60
 DEFAULT_BREAK_SECONDS = 2 * 60
 DEFAULT_SNOOZE_SECONDS = 5 * 60
-DEFAULT_WARNING_SECONDS = 60
+DEFAULT_WARNING_SECONDS = 15
+DEFAULT_IDLE_CREDIT_SECONDS = 10 * 60
 
 WORK_SECONDS_RANGE = (60, 4 * 60 * 60)
 BREAK_SECONDS_RANGE = (15, 60 * 60)
 SNOOZE_SECONDS_RANGE = (60, 60 * 60)
 WARNING_SECONDS_RANGE = (0, 15 * 60)
+IDLE_CREDIT_SECONDS_RANGE = (2 * 60, 4 * 60 * 60)
 
 WORK_PRESETS = (20 * 60, 25 * 60, 30 * 60, 45 * 60, 60 * 60)
 BREAK_PRESETS = (60, 2 * 60, 5 * 60, 10 * 60)
+IDLE_CREDIT_PRESETS = (5 * 60, 10 * 60, 15 * 60, 30 * 60)
 
 
 @dataclass(frozen=True)
@@ -30,6 +33,7 @@ class Settings:
     break_seconds: int = DEFAULT_BREAK_SECONDS
     snooze_seconds: int = DEFAULT_SNOOZE_SECONDS
     warning_seconds: int = DEFAULT_WARNING_SECONDS
+    idle_credit_seconds: int = DEFAULT_IDLE_CREDIT_SECONDS
     idle_reset_enabled: bool = True
     show_countdown: bool = True
     sound_enabled: bool = False
@@ -82,6 +86,12 @@ def settings_from_payload(payload: dict) -> Settings:
         ),
         # A warning can never precede the interval that triggers it.
         warning_seconds=min(warning_seconds, work_seconds - 1),
+        idle_credit_seconds=_read_duration(
+            payload,
+            "idle_credit_seconds",
+            IDLE_CREDIT_SECONDS_RANGE,
+            DEFAULT_IDLE_CREDIT_SECONDS,
+        ),
         idle_reset_enabled=_read_flag(payload, "idle_reset_enabled", True),
         show_countdown=_read_flag(payload, "show_countdown", True),
         sound_enabled=_read_flag(payload, "sound_enabled", False),

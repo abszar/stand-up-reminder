@@ -6,6 +6,7 @@ from pathlib import Path
 from stand_up_reminder.scheduler import TimingMode
 from stand_up_reminder.settings import (
     BREAK_SECONDS_RANGE,
+    IDLE_CREDIT_SECONDS_RANGE,
     SNOOZE_SECONDS_RANGE,
     WORK_SECONDS_RANGE,
     Settings,
@@ -20,7 +21,8 @@ class SettingsDefaultsTests(unittest.TestCase):
         self.assertEqual(settings.work_seconds, 30 * 60)
         self.assertEqual(settings.break_seconds, 2 * 60)
         self.assertEqual(settings.snooze_seconds, 5 * 60)
-        self.assertEqual(settings.warning_seconds, 60)
+        self.assertEqual(settings.warning_seconds, 15)
+        self.assertEqual(settings.idle_credit_seconds, 10 * 60)
         self.assertTrue(settings.idle_reset_enabled)
         self.assertTrue(settings.show_countdown)
         self.assertFalse(settings.sound_enabled)
@@ -64,6 +66,7 @@ class SettingsStoreTests(unittest.TestCase):
             break_seconds=3 * 60,
             snooze_seconds=10 * 60,
             warning_seconds=0,
+            idle_credit_seconds=15 * 60,
             idle_reset_enabled=False,
             show_countdown=False,
             sound_enabled=True,
@@ -93,6 +96,18 @@ class SettingsStoreTests(unittest.TestCase):
     def test_snooze_range_is_enforced(self):
         self.write({"snooze_seconds": 1})
         self.assertEqual(self.store.load().snooze_seconds, SNOOZE_SECONDS_RANGE[0])
+
+    def test_idle_credit_range_is_enforced(self):
+        self.write({"idle_credit_seconds": 1})
+        self.assertEqual(
+            self.store.load().idle_credit_seconds, IDLE_CREDIT_SECONDS_RANGE[0]
+        )
+
+    def test_settings_file_without_idle_credit_uses_the_default(self):
+        self.write({"timing_mode": "wall"})
+        self.assertEqual(
+            self.store.load().idle_credit_seconds, Settings().idle_credit_seconds
+        )
 
     def test_non_boolean_flags_fall_back_to_defaults(self):
         self.write({"sound_enabled": "yes", "show_countdown": 3})
