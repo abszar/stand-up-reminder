@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import sys
 from dataclasses import dataclass, replace
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Mapping, Optional, Sequence
 
@@ -30,12 +30,16 @@ from .settings import (
     SettingsStore,
 )
 from .stats import (
+    GRID_DAYS,
     WEEK_DAYS,
     BreakOutcome,
     DailyStats,
     StatsStore,
     adherence_percent,
     aggregate_stats,
+    day_tooltip,
+    heat_level,
+    heatmap_weeks,
     last_days,
     rating_label,
     score_headline,
@@ -62,6 +66,73 @@ TIMELINE_COLORS = {
     "snoozed": "#c9ddd5",
 }
 TIMELINE_TRACK_COLOR = "#18312e"
+
+# Grid shades, faint to strong, indexed by stats.heat_level.
+HEAT_COLORS = ("#2f5a52", "#3f7d5f", "#57a86d", "#7bc47f")
+HEAT_EMPTY_COLOR = "#1e3b37"
+GRID_LABEL_COLOR = "#8fb3a9"
+GRID_LABEL_WIDTH = 38
+GRID_MONTH_HEIGHT = 18
+GRID_GAP = 4
+
+
+def heat_cell_size(
+    width: float,
+    columns: int,
+    gap: float = GRID_GAP,
+    label_width: float = GRID_LABEL_WIDTH,
+) -> float:
+    """Side of a day square once labels and the gaps have their share."""
+    if columns <= 0:
+        return 0.0
+    usable = width - label_width - gap * (columns - 1)
+    return max(0.0, usable / columns)
+
+
+def heat_grid_height(
+    cell: float, gap: float = GRID_GAP, month_height: float = GRID_MONTH_HEIGHT
+) -> int:
+    """Height of a seven-row grid built from squares of this size."""
+    return int(month_height + 7 * cell + 6 * gap)
+
+
+def heat_cell_at(
+    x: float,
+    y: float,
+    columns: int,
+    cell: float,
+    gap: float = GRID_GAP,
+    label_width: float = GRID_LABEL_WIDTH,
+    month_height: float = GRID_MONTH_HEIGHT,
+) -> Optional[tuple[int, int]]:
+    """Grid position under a point, or None for labels, gaps, and margins."""
+    if cell <= 0 or columns <= 0:
+        return None
+    column, within_column = divmod(x - label_width, cell + gap)
+    row, within_row = divmod(y - month_height, cell + gap)
+    if not 0 <= column < columns or not 0 <= row < 7:
+        return None
+    if within_column > cell or within_row > cell:
+        return None
+    return int(column), int(row)
+
+
+COUNTDOWN_CALM_COLOR = "#f7f2e7"
+COUNTDOWN_URGENT_COLOR = "#e05d5d"
+
+
+def countdown_color(seconds_remaining: float, total_seconds: float) -> str:
+    """Warning countdown colour, white at the start and red at the break."""
+    if total_seconds <= 0:
+        return COUNTDOWN_URGENT_COLOR
+    left = min(1.0, max(0.0, seconds_remaining / total_seconds))
+    calm = hex_rgb(COUNTDOWN_CALM_COLOR)
+    urgent = hex_rgb(COUNTDOWN_URGENT_COLOR)
+    channels = (
+        round(255 * (urgent[index] + left * (calm[index] - urgent[index])))
+        for index in range(3)
+    )
+    return "#" + "".join(f"{channel:02x}" for channel in channels)
 
 
 def hex_rgb(color: str) -> tuple[float, float, float]:
@@ -120,13 +191,15 @@ class BreakView:
 
 def break_view(phase: Phase, seconds_remaining: int, away_seconds: int) -> BreakView:
     # A work phase means the window is counting down to the break itself.
+    # Its actions match the break's, so a break can be put off before it
+    # interrupts anything.
     if phase is Phase.WORK:
         return BreakView(
             title=_("Break coming up"),
             countdown=format_duration(seconds_remaining),
             away=_("Time to stand up in %s") % format_duration(seconds_remaining),
-            can_snooze=False,
-            can_skip=False,
+            can_snooze=True,
+            can_skip=True,
             can_return=False,
         )
     active = phase is Phase.BREAK
@@ -203,6 +276,111 @@ def break_progress_fraction(seconds: int, total_seconds: int) -> float:
     return min(1.0, max(0.0, float(seconds) / float(total_seconds)))
 
 
+STYLE_SHEET = b"""
+window.break-window,
+.break-card {
+    background-color: #294c47;
+    color: #e9f2ed;
+}
+window.break-dimmer {
+    background-color: #18312e;
+}
+.break-eyebrow {
+    color: #f2a65a;
+    font-family: Cantarell, sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 2px;
+}
+.break-countdown {
+    color: #f7f2e7;
+    font-family: "DejaVu Sans Mono", monospace;
+    font-size: 74px;
+    font-weight: 700;
+}
+.break-away {
+    color: #f2a65a;
+    font-family: "DejaVu Sans Mono", monospace;
+    font-size: 21px;
+    font-weight: 700;
+    letter-spacing: 1px;
+}
+button.break-return,
+button.break-snooze {
+    min-height: 38px;
+    border: 1px solid #f2a65a;
+    background-image: none;
+    border-radius: 6px;
+    color: #18312e;
+    background-color: #f2a65a;
+    box-shadow: none;
+    font-family: Cantarell, sans-serif;
+    font-size: 15px;
+    font-weight: 700;
+}
+button.break-skip {
+    min-height: 38px;
+    border: 1px solid #c9ddd5;
+    background-image: none;
+    border-radius: 6px;
+    color: #e9f2ed;
+    background-color: #294c47;
+    box-shadow: none;
+    font-family: Cantarell, sans-serif;
+    font-size: 15px;
+    font-weight: 700;
+}
+.break-prompt {
+    color: #c9ddd5;
+    font-family: Cantarell, sans-serif;
+    font-size: 16px;
+}
+.break-scores {
+    color: #c9ddd5;
+    font-family: Cantarell, sans-serif;
+    font-size: 13px;
+    letter-spacing: 1px;
+}
+.stats-score {
+    color: #f7f2e7;
+    font-family: "DejaVu Sans Mono", monospace;
+    font-size: 52px;
+    font-weight: 700;
+}
+.stats-day-name {
+    color: #8fb3a9;
+    font-family: Cantarell, sans-serif;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 1px;
+}
+.stats-day-count {
+    color: #f7f2e7;
+    font-family: "DejaVu Sans Mono", monospace;
+    font-size: 22px;
+    font-weight: 700;
+}
+.break-shortcuts {
+    color: #8fb3a9;
+    font-family: Cantarell, sans-serif;
+    font-size: 12px;
+    letter-spacing: 1px;
+}
+progressbar.break-progress trough {
+    min-height: 8px;
+    border: 0;
+    border-radius: 4px;
+    background-color: #18312e;
+}
+progressbar.break-progress progress {
+    min-height: 8px;
+    border: 0;
+    border-radius: 4px;
+    background-color: #f2a65a;
+}
+"""
+
+
 class TimelineStrip(Gtk.DrawingArea):
     """A horizontal day track with one colored dot per recorded outcome."""
 
@@ -241,6 +419,117 @@ class TimelineStrip(Gtk.DrawingArea):
             )
             context.fill()
         return False
+
+
+class HeatGrid(Gtk.DrawingArea):
+    """The day grid: a column per week, a row per weekday, filling its width.
+
+    Days are square and sized from the width on offer, so the grid spans
+    the popup however wide it is drawn.
+    """
+
+    # Sunday opens each column; this date anchors the weekday row labels.
+    ROW_ANCHOR = date(2026, 7, 26)
+    LABEL_ROWS = (1, 3, 5)
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._weeks: list[list[Optional[str]]] = []
+        self._levels: dict[str, Optional[int]] = {}
+        self._tooltips: dict[str, str] = {}
+        self._months: dict[int, str] = {}
+        self._height = 0
+        self.set_has_tooltip(True)
+        self.connect("draw", self._on_draw)
+        self.connect("query-tooltip", self._on_tooltip)
+        self.connect("size-allocate", lambda *_args: self._sync_height())
+
+    def set_history(self, history: Sequence[tuple[str, DailyStats]]) -> None:
+        self._weeks = heatmap_weeks([day for day, _stats in history])
+        self._levels = {day: heat_level(stats) for day, stats in history}
+        self._tooltips = {day: day_tooltip(day, stats) for day, stats in history}
+        self._months = {}
+        shown = ""
+        for column, days in enumerate(self._weeks):
+            first = next((day for day in days if day), None)
+            if first is None:
+                continue
+            month = date.fromisoformat(first).strftime("%b")
+            if month != shown:
+                shown = month
+                self._months[column] = month
+        self._sync_height()
+        self.queue_draw()
+
+    def _cell_size(self) -> float:
+        return heat_cell_size(self.get_allocated_width(), len(self._weeks))
+
+    def _sync_height(self) -> None:
+        cell = self._cell_size()
+        if cell <= 0:
+            return
+        height = heat_grid_height(cell)
+        if height != self._height:
+            self._height = height
+            self.set_size_request(-1, height)
+
+    def _on_draw(self, _area, context) -> bool:
+        cell = self._cell_size()
+        if cell <= 0:
+            return False
+        context.select_font_face("Cantarell")
+        context.set_font_size(11)
+        context.set_source_rgb(*hex_rgb(GRID_LABEL_COLOR))
+        for row in self.LABEL_ROWS:
+            name = (self.ROW_ANCHOR + timedelta(days=row)).strftime("%a")
+            extents = context.text_extents(name)
+            context.move_to(
+                GRID_LABEL_WIDTH - 8 - extents.width,
+                GRID_MONTH_HEIGHT + row * (cell + GRID_GAP) + cell / 2 + 4,
+            )
+            context.show_text(name)
+        for column, month in self._months.items():
+            context.move_to(
+                GRID_LABEL_WIDTH + column * (cell + GRID_GAP),
+                GRID_MONTH_HEIGHT - 6,
+            )
+            context.show_text(month)
+
+        radius = min(3.5, cell / 4)
+        for column, days in enumerate(self._weeks):
+            for row, day in enumerate(days):
+                level = self._levels.get(day) if day else None
+                color = HEAT_EMPTY_COLOR if level is None else HEAT_COLORS[level]
+                left = GRID_LABEL_WIDTH + column * (cell + GRID_GAP)
+                top = GRID_MONTH_HEIGHT + row * (cell + GRID_GAP)
+                context.new_sub_path()
+                context.arc(left + cell - radius, top + radius, radius, -1.5708, 0)
+                context.arc(
+                    left + cell - radius, top + cell - radius, radius, 0, 1.5708
+                )
+                context.arc(
+                    left + radius, top + cell - radius, radius, 1.5708, 3.1416
+                )
+                context.arc(left + radius, top + radius, radius, 3.1416, 4.7124)
+                context.close_path()
+                context.set_source_rgb(*hex_rgb(color))
+                context.fill()
+        return False
+
+    def _on_tooltip(self, _widget, x, y, _keyboard, tooltip) -> bool:
+        cell = self._cell_size()
+        if cell <= 0:
+            return False
+        at = heat_cell_at(x, y, len(self._weeks), cell)
+        if at is None:
+            return False
+        column, row = at
+        day = self._weeks[column][row]
+        text = self._tooltips.get(day) if day else None
+        if text is None:
+            return False
+        tooltip.set_text(text)
+        return True
 
 
 class DimmerWindow(Gtk.Window):
@@ -447,7 +736,17 @@ class BreakWindow(Gtk.ApplicationWindow):
         view = break_view(phase, seconds_remaining, away_seconds)
         self.set_title(view.title)
         self.eyebrow.set_text(view.title.upper())
-        self.countdown.set_text(view.countdown)
+        if phase is Phase.WORK:
+            # The warning countdown reddens as the break approaches.
+            self.countdown.set_markup(
+                '<span foreground="%s">%s</span>'
+                % (
+                    countdown_color(seconds_remaining, self.warning_seconds),
+                    GLib.markup_escape_text(view.countdown),
+                )
+            )
+        else:
+            self.countdown.set_text(view.countdown)
         self.away.set_text(view.away)
         total = self.warning_seconds if phase is Phase.WORK else self.break_seconds
         self.progress.set_fraction(
@@ -480,7 +779,7 @@ class StatsWindow(Gtk.Window):
 
     def __init__(self) -> None:
         super().__init__(type=Gtk.WindowType.TOPLEVEL, title=_("Statistics"))
-        self.set_default_size(560, 540)
+        self.set_default_size(600, 700)
         self.set_resizable(False)
         self.set_decorated(False)
         self.set_position(Gtk.WindowPosition.CENTER)
@@ -555,10 +854,20 @@ class StatsWindow(Gtk.Window):
         legend.set_no_show_all(True)
         self.timeline_legend = legend
 
-        self.days_grid = Gtk.Grid()
-        self.days_grid.set_column_homogeneous(True)
-        self.days_grid.set_column_spacing(8)
-        self.days_grid.set_row_spacing(2)
+        self.days_grid = HeatGrid()
+
+        scale = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+        less = Gtk.Label(label=_("Less"))
+        less.get_style_context().add_class("stats-day-name")
+        scale.pack_start(less, False, False, 0)
+        for shade in HEAT_COLORS:
+            swatch = Gtk.Label()
+            swatch.set_markup(f'<span foreground="{shade}">■</span>')
+            scale.pack_start(swatch, False, False, 0)
+        more = Gtk.Label(label=_("More"))
+        more.get_style_context().add_class("stats-day-name")
+        scale.pack_start(more, False, False, 0)
+        self.heat_scale = scale
 
         self.today_line = Gtk.Label(label="")
         self.today_line.set_xalign(0.0)
@@ -583,6 +892,7 @@ class StatsWindow(Gtk.Window):
         card.pack_start(self.timeline_hours, False, False, 0)
         card.pack_start(self.timeline_legend, False, False, 0)
         card.pack_start(self.days_grid, False, False, 8)
+        card.pack_start(self.heat_scale, False, False, 0)
         card.pack_start(self.today_line, False, False, 0)
         card.pack_start(self.week_line, False, False, 0)
         card.pack_start(close_button, False, False, 6)
@@ -600,10 +910,11 @@ class StatsWindow(Gtk.Window):
 
     def update_stats(
         self,
-        week: Sequence[tuple[str, DailyStats]],
+        history: Sequence[tuple[str, DailyStats]],
         timeline: tuple[int, int, list[tuple[float, str]]],
     ) -> None:
-        """Refresh from the week's day keys and stats, today last."""
+        """Refresh from the history's day keys and stats, today last."""
+        week = list(history[-WEEK_DAYS:])
         start_minutes, end_minutes, points = timeline
         self.timeline.set_points(points)
         self.timeline_start.set_text(
@@ -632,16 +943,7 @@ class StatsWindow(Gtk.Window):
         self.today_line.set_text(summary_label(today_stats))
         self.week_line.set_text(week_label(week_total))
 
-        for child in self.days_grid.get_children():
-            child.destroy()
-        for column, (day, stats) in enumerate(week):
-            name = Gtk.Label(label=date.fromisoformat(day).strftime("%a"))
-            name.get_style_context().add_class("stats-day-name")
-            count = Gtk.Label(label=str(stats.taken))
-            count.get_style_context().add_class("stats-day-count")
-            self.days_grid.attach(name, column, 0, 1, 1)
-            self.days_grid.attach(count, column, 1, 1, 1)
-        self.days_grid.show_all()
+        self.days_grid.set_history(history)
 
 
 class ReminderApplication(Gtk.Application):
@@ -686,111 +988,8 @@ class ReminderApplication(Gtk.Application):
         Gtk.Application.do_startup(self)
         GLib.set_application_name(APP_NAME)
         css = Gtk.CssProvider()
-        css.load_from_data(
-            b"""
-            window.break-window,
-            .break-card {
-                background-color: #294c47;
-                color: #e9f2ed;
-            }
-            window.break-dimmer {
-                background-color: #18312e;
-            }
-            .break-eyebrow {
-                color: #f2a65a;
-                font-family: Cantarell, sans-serif;
-                font-size: 13px;
-                font-weight: 700;
-                letter-spacing: 2px;
-            }
-            .break-countdown {
-                color: #f7f2e7;
-                font-family: "DejaVu Sans Mono", monospace;
-                font-size: 74px;
-                font-weight: 700;
-            }
-            .break-away {
-                color: #f2a65a;
-                font-family: "DejaVu Sans Mono", monospace;
-                font-size: 21px;
-                font-weight: 700;
-                letter-spacing: 1px;
-            }
-            button.break-return,
-            button.break-snooze {
-                min-height: 38px;
-                border: 1px solid #f2a65a;
-                background-image: none;
-                border-radius: 6px;
-                color: #18312e;
-                background-color: #f2a65a;
-                box-shadow: none;
-                font-family: Cantarell, sans-serif;
-                font-size: 15px;
-                font-weight: 700;
-            }
-            button.break-skip {
-                min-height: 38px;
-                border: 1px solid #c9ddd5;
-                background-image: none;
-                border-radius: 6px;
-                color: #e9f2ed;
-                background-color: #294c47;
-                box-shadow: none;
-                font-family: Cantarell, sans-serif;
-                font-size: 15px;
-                font-weight: 700;
-            }
-            .break-prompt {
-                color: #c9ddd5;
-                font-family: Cantarell, sans-serif;
-                font-size: 16px;
-            }
-            .break-scores {
-                color: #c9ddd5;
-                font-family: Cantarell, sans-serif;
-                font-size: 13px;
-                letter-spacing: 1px;
-            }
-            .stats-score {
-                color: #f7f2e7;
-                font-family: "DejaVu Sans Mono", monospace;
-                font-size: 52px;
-                font-weight: 700;
-            }
-            .stats-day-name {
-                color: #8fb3a9;
-                font-family: Cantarell, sans-serif;
-                font-size: 12px;
-                font-weight: 700;
-                letter-spacing: 1px;
-            }
-            .stats-day-count {
-                color: #f7f2e7;
-                font-family: "DejaVu Sans Mono", monospace;
-                font-size: 22px;
-                font-weight: 700;
-            }
-            .break-shortcuts {
-                color: #8fb3a9;
-                font-family: Cantarell, sans-serif;
-                font-size: 12px;
-                letter-spacing: 1px;
-            }
-            progressbar.break-progress trough {
-                min-height: 8px;
-                border: 0;
-                border-radius: 4px;
-                background-color: #18312e;
-            }
-            progressbar.break-progress progress {
-                min-height: 8px;
-                border: 0;
-                border-radius: 4px;
-                background-color: #f2a65a;
-            }
-            """
-        )
+        css = Gtk.CssProvider()
+        css.load_from_data(STYLE_SHEET)
         screen = Gdk.Screen.get_default()
         if screen is None:
             raise RuntimeError("no graphical display is available")
@@ -1327,7 +1526,7 @@ class ReminderApplication(Gtk.Application):
     def _refresh_stats_window(self) -> None:
         if self.stats_window is None or self.stats is None:
             return
-        days = last_days(WEEK_DAYS)
+        days = last_days(GRID_DAYS)
         self.stats_window.update_stats(
             list(zip(days, self.stats.load_days(days))),
             self._today_timeline(days[-1]),

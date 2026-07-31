@@ -418,6 +418,30 @@ class WarningTests(unittest.TestCase):
         self.clocks.advance(20)
         self.assertEqual(self.scheduler.advance(), Transition.WARN_BREAK)
 
+    def test_snoozing_from_the_warning_delays_the_break(self):
+        self.clocks.advance(20)
+        self.assertEqual(self.scheduler.advance(), Transition.WARN_BREAK)
+
+        self.assertTrue(self.scheduler.snooze_break())
+        snapshot = self.scheduler.snapshot()
+        self.assertEqual(snapshot.phase, Phase.SNOOZED)
+        self.assertEqual(snapshot.seconds_remaining, 5)
+
+    def test_skipping_from_the_warning_restarts_the_work_interval(self):
+        self.clocks.advance(20)
+        self.assertEqual(self.scheduler.advance(), Transition.WARN_BREAK)
+
+        self.assertTrue(self.scheduler.skip_break())
+        snapshot = self.scheduler.snapshot()
+        self.assertEqual(snapshot.phase, Phase.WORK)
+        self.assertEqual(snapshot.seconds_remaining, 30)
+
+    def test_snooze_and_skip_are_refused_before_the_warning(self):
+        self.clocks.advance(5)
+        self.assertFalse(self.scheduler.snooze_break())
+        self.assertFalse(self.scheduler.skip_break())
+        self.assertEqual(self.scheduler.snapshot().phase, Phase.WORK)
+
     def test_resuming_from_pause_can_warn_again(self):
         self.clocks.advance(20)
         self.assertEqual(self.scheduler.advance(), Transition.WARN_BREAK)

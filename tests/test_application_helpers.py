@@ -8,6 +8,9 @@ from stand_up_reminder.application import (
     break_progress_fraction,
     duration_label,
     format_duration,
+    heat_cell_at,
+    heat_cell_size,
+    heat_grid_height,
     hex_rgb,
     idle_credit_threshold,
     indicator_label,
@@ -54,6 +57,57 @@ class BreakProgressTests(unittest.TestCase):
         self.assertEqual(break_progress_fraction(200, 120), 1.0)
         self.assertEqual(break_progress_fraction(-1, 120), 0.0)
         self.assertEqual(break_progress_fraction(10, 0), 0.0)
+
+
+class HeatGeometryTests(unittest.TestCase):
+    """The grid fills the width it is given, with square days."""
+
+    def test_cells_divide_the_width_left_after_labels_and_gaps(self):
+        cell = heat_cell_size(500, 12, gap=4, label_width=38)
+        self.assertAlmostEqual(cell, (500 - 38 - 11 * 4) / 12)
+
+    def test_a_narrow_or_empty_grid_never_goes_negative(self):
+        self.assertEqual(heat_cell_size(20, 12), 0.0)
+        self.assertEqual(heat_cell_size(500, 0), 0.0)
+
+    def test_height_follows_the_seven_weekday_rows(self):
+        self.assertEqual(
+            heat_grid_height(30, gap=4, month_height=18), 18 + 7 * 30 + 6 * 4
+        )
+
+    def test_a_point_maps_to_the_day_square_under_it(self):
+        # 12 columns of 30px squares, 4px apart, after a 38px label column.
+        geometry = dict(columns=12, cell=30, gap=4, label_width=38, month_height=18)
+        self.assertEqual(heat_cell_at(40, 20, **geometry), (0, 0))
+        self.assertEqual(heat_cell_at(38 + 34 + 5, 18 + 34 + 5, **geometry), (1, 1))
+
+    def test_labels_gaps_and_the_outside_map_to_nothing(self):
+        geometry = dict(columns=12, cell=30, gap=4, label_width=38, month_height=18)
+        self.assertIsNone(heat_cell_at(10, 40, **geometry))
+        self.assertIsNone(heat_cell_at(40, 5, **geometry))
+        self.assertIsNone(heat_cell_at(38 + 31, 20, **geometry))
+        self.assertIsNone(heat_cell_at(4000, 20, **geometry))
+        self.assertIsNone(heat_cell_at(40, 4000, **geometry))
+
+
+class CountdownColorTests(unittest.TestCase):
+    """The warning countdown starts white and turns red as it runs out."""
+
+    def test_starts_white_and_ends_red(self):
+        self.assertEqual(application.countdown_color(10, 10), "#f7f2e7")
+        self.assertEqual(application.countdown_color(0, 10), "#e05d5d")
+
+    def test_passes_through_the_two_colors_on_the_way(self):
+        middle = application.countdown_color(5, 10)
+        red, green, blue = application.hex_rgb(middle)
+        self.assertTrue(0xE0 / 255 < red < 0xF7 / 255)
+        self.assertTrue(0x5D / 255 < green < 0xF2 / 255)
+        self.assertTrue(0x5D / 255 < blue < 0xE7 / 255)
+
+    def test_clamps_beyond_the_warning_window(self):
+        self.assertEqual(application.countdown_color(40, 10), "#f7f2e7")
+        self.assertEqual(application.countdown_color(-5, 10), "#e05d5d")
+        self.assertEqual(application.countdown_color(5, 0), "#e05d5d")
 
 
 class HexRgbTests(unittest.TestCase):
@@ -140,10 +194,13 @@ class BreakViewTests(unittest.TestCase):
         self.assertEqual(view.title, "Break coming up")
         self.assertEqual(view.countdown, "00:15")
         self.assertEqual(view.away, "Time to stand up in 00:15")
-        self.assertFalse(view.can_snooze)
-        self.assertFalse(view.can_skip)
         self.assertFalse(view.can_return)
         self.assertFalse(view.can_miss)
+
+    def test_the_warning_offers_the_same_break_actions(self):
+        view = application.break_view(Phase.WORK, 15, 0)
+        self.assertTrue(view.can_snooze)
+        self.assertTrue(view.can_skip)
 
     def test_snoozed_view_has_no_popup_actions(self):
         view = application.break_view(Phase.SNOOZED, 5 * 60, 0)

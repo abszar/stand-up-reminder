@@ -8,8 +8,12 @@ from stand_up_reminder.stats import (
     BreakOutcome,
     DailyStats,
     StatsStore,
+    HEAT_LEVELS,
     adherence_percent,
     aggregate_stats,
+    day_tooltip,
+    heat_level,
+    heatmap_weeks,
     last_days,
     rating_label,
     score_headline,
@@ -146,6 +150,64 @@ class ScoreLineTests(unittest.TestCase):
         self.assertEqual(score_line(None, 100), "Today: — · This week: 100% 😄")
 
 
+class HeatLevelTests(unittest.TestCase):
+    def test_shades_a_day_by_its_adherence(self):
+        self.assertEqual(heat_level(DailyStats(taken=10)), HEAT_LEVELS - 1)
+        self.assertEqual(heat_level(DailyStats(taken=8, missed=2)), 2)
+        self.assertEqual(heat_level(DailyStats(taken=1, missed=1)), 1)
+        self.assertEqual(heat_level(DailyStats(taken=1, missed=9)), 0)
+
+    def test_a_day_without_due_breaks_has_no_level(self):
+        self.assertIsNone(heat_level(DailyStats()))
+        self.assertIsNone(heat_level(DailyStats(away=3, snoozed=1)))
+
+
+class DayTooltipTests(unittest.TestCase):
+    def test_names_the_day_with_its_counts_and_score(self):
+        self.assertEqual(
+            day_tooltip("2026-07-31", DailyStats(taken=9, missed=1)),
+            "Fri 31 Jul · 9 breaks taken, 1 missed · 90% 😄",
+        )
+
+    def test_reports_a_day_without_breaks(self):
+        self.assertEqual(
+            day_tooltip("2026-07-26", DailyStats()), "Sun 26 Jul · No breaks · —"
+        )
+
+
+class HeatmapWeeksTests(unittest.TestCase):
+    def test_arranges_days_into_sunday_first_columns(self):
+        # 2026-07-26 is a Sunday, so it opens a fresh column.
+        weeks = heatmap_weeks(["2026-07-26", "2026-07-27", "2026-07-31"])
+        self.assertEqual(len(weeks), 1)
+        self.assertEqual(weeks[0][0], "2026-07-26")
+        self.assertEqual(weeks[0][1], "2026-07-27")
+        self.assertEqual(weeks[0][5], "2026-07-31")
+        self.assertIsNone(weeks[0][2])
+        self.assertIsNone(weeks[0][6])
+
+    def test_pads_the_first_column_before_the_opening_weekday(self):
+        # 2026-07-31 is a Friday: rows above it stay empty.
+        weeks = heatmap_weeks(["2026-07-31", "2026-08-01", "2026-08-02"])
+        self.assertEqual(len(weeks), 2)
+        self.assertEqual(weeks[0][:5], [None] * 5)
+        self.assertEqual(weeks[0][5], "2026-07-31")
+        self.assertEqual(weeks[0][6], "2026-08-01")
+        self.assertEqual(weeks[1][0], "2026-08-02")
+
+    def test_every_column_holds_a_full_week(self):
+        weeks = heatmap_weeks(last_days(35, "2026-07-31"))
+        self.assertEqual(len(weeks), 6)
+        for column in weeks:
+            self.assertEqual(len(column), 7)
+        placed = [day for column in weeks for day in column if day]
+        self.assertEqual(len(placed), 35)
+        self.assertEqual(placed[-1], "2026-07-31")
+
+    def test_no_days_makes_no_columns(self):
+        self.assertEqual(heatmap_weeks([]), [])
+
+
 class TimelineLayoutTests(unittest.TestCase):
     def test_places_events_between_the_first_hour_and_now(self):
         start, end, points = timeline_layout(
@@ -234,6 +296,15 @@ class StatsStoreTests(unittest.TestCase):
         )
         self.assertEqual(
             self.store.load("2026-07-20"), DailyStats(taken=1, missed=1)
+        )
+
+    def test_old_event_lists_are_dropped_but_their_counters_stay(self):
+        self.store.record(BreakOutcome.TAKEN, "2026-07-01", at="09:30")
+        self.store.record(BreakOutcome.TAKEN, "2026-07-20", at="10:00")
+        self.assertEqual(self.store.load_events("2026-07-01"), [])
+        self.assertEqual(self.store.load("2026-07-01"), DailyStats(taken=1))
+        self.assertEqual(
+            self.store.load_events("2026-07-20"), [(10 * 60, "taken")]
         )
 
     def test_a_day_without_events_has_an_empty_timeline(self):

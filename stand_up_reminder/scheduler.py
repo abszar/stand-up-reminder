@@ -147,18 +147,25 @@ class Scheduler:
             return transition
         return self._begin_break()
 
+    def _is_warning(self) -> bool:
+        """True while the pre-break warning stands and the break is due."""
+        return self.phase is Phase.WORK and self._warned
+
     def snooze_break(self) -> bool:
+        """Delay the break, from the warning as well as from the break."""
         self.advance()
-        if self.phase is not Phase.BREAK:
+        if self.phase is not Phase.BREAK and not self._is_warning():
             return False
         self.phase = Phase.SNOOZED
         self.remaining = self.snooze_seconds
         self.away_elapsed = 0.0
+        self._warned = False
         return True
 
     def skip_break(self) -> bool:
+        """Start a fresh work interval instead of the break that is due."""
         self.advance()
-        if self.phase is not Phase.BREAK:
+        if self.phase is not Phase.BREAK and not self._is_warning():
             return False
         self._begin_work()
         return True

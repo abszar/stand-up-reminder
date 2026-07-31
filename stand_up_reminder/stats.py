@@ -11,8 +11,14 @@ from typing import Iterable, Optional, Sequence
 from .i18n import _, ngettext
 
 
-HISTORY_DAYS = 30
+# Twelve weeks of history, the span the statistics grid draws. Only the
+# most recent days keep their individual events; older days are counters
+# alone, which is all the grid needs and keeps the file small.
+HISTORY_DAYS = 84
+GRID_DAYS = 84
+EVENT_DAYS = 7
 WEEK_DAYS = 7
+HEAT_LEVELS = 4
 
 
 class BreakOutcome(str, Enum):
@@ -164,6 +170,54 @@ def timeline_layout(
     return start, end, points
 
 
+def day_tooltip(day: str, stats: DailyStats) -> str:
+    """What a grid square says when the pointer rests on it."""
+    parts = _outcome_parts(stats)
+    return " · ".join(
+        (
+            date.fromisoformat(day).strftime("%a %d %b"),
+            ", ".join(parts) if parts else _("No breaks"),
+            score_headline(adherence_percent(stats)),
+        )
+    )
+
+
+def heat_level(stats: DailyStats) -> Optional[int]:
+    """Shade of a day in the grid, or None when no break was ever due.
+
+    The thresholds are the ones behind the mood emoji and the verdict, so
+    a darker square always means a better kept day.
+    """
+    percent = adherence_percent(stats)
+    if percent is None:
+        return None
+    if percent >= 90:
+        return 3
+    if percent >= 70:
+        return 2
+    if percent >= 40:
+        return 1
+    return 0
+
+
+def heatmap_weeks(days: Sequence[str]) -> list[list[Optional[str]]]:
+    """Arrange day keys into GitHub-style columns of Sunday-first weeks."""
+    if not days:
+        return []
+    weeks: list[list[Optional[str]]] = []
+    for day in days:
+        row = (date.fromisoformat(day).weekday() + 1) % 7
+        if not weeks or row <= _last_filled_row(weeks[-1]):
+            weeks.append([None] * 7)
+        weeks[-1][row] = day
+    return weeks
+
+
+def _last_filled_row(week: Sequence[Optional[str]]) -> int:
+    filled = [row for row, day in enumerate(week) if day is not None]
+    return filled[-1] if filled else -1
+
+
 def rating_label(percent: Optional[int]) -> str:
     if percent is None:
         return _("No breaks due yet")
@@ -239,6 +293,10 @@ class StatsStore:
         )
         for stale in sorted(days)[:-HISTORY_DAYS]:
             del days[stale]
+        cutoff = (date.fromisoformat(key) - timedelta(days=EVENT_DAYS)).isoformat()
+        for old in [day for day in days if day < cutoff]:
+            if isinstance(days[old], dict):
+                days[old].pop("events", None)
         self._write(days)
 
     def load_events(self, today: Optional[str] = None) -> list[tuple[int, str]]:
