@@ -8,7 +8,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Iterable, Optional, Sequence
 
-from .i18n import _, ngettext
+from .i18n import _
 
 
 # Twelve weeks of history, the span the statistics grid draws. Only the
@@ -45,9 +45,7 @@ def today_key(today: Optional[str] = None) -> str:
 def _outcome_parts(stats: DailyStats) -> list[str]:
     parts = []
     if stats.taken:
-        parts.append(
-            ngettext("%d break taken", "%d breaks taken", stats.taken) % stats.taken
-        )
+        parts.append(_("%d taken") % stats.taken)
     if stats.away:
         parts.append(_("%d away") % stats.away)
     if stats.missed:
@@ -59,18 +57,23 @@ def _outcome_parts(stats: DailyStats) -> list[str]:
     return parts
 
 
+def outcome_summary(stats: DailyStats) -> str:
+    """The day's outcomes as one line, empty when nothing is recorded."""
+    return " · ".join(_outcome_parts(stats))
+
+
 def summary_label(stats: DailyStats) -> str:
-    parts = _outcome_parts(stats)
-    if not parts:
-        return _("No breaks yet today")
-    return _("Today: %s") % ", ".join(parts)
+    summary = outcome_summary(stats)
+    if not summary:
+        return _("Nothing recorded yet")
+    return _("Today  %s") % summary
 
 
 def week_label(stats: DailyStats) -> str:
-    parts = _outcome_parts(stats)
-    if not parts:
-        return _("No breaks this week")
-    return _("This week: %s") % ", ".join(parts)
+    summary = outcome_summary(stats)
+    if not summary:
+        return _("Nothing recorded this week")
+    return _("Week  %s") % summary
 
 
 def last_days(count: int, today: Optional[str] = None) -> list[str]:
@@ -107,21 +110,15 @@ def adherence_percent(stats: DailyStats) -> Optional[int]:
     return round(100 * stats.taken / due)
 
 
-def score_emoji(percent: int) -> str:
-    if percent >= 90:
-        return "😄"
-    if percent >= 70:
-        return "🙂"
-    if percent >= 40:
-        return "😐"
-    return "😟"
-
-
 def score_headline(percent: Optional[int]) -> str:
-    """A percentage with its mood, or an em dash when nothing was due."""
+    """A bare percentage, or an em dash when nothing was due.
+
+    The mood that used to ride along here is drawn as a sprite face beside
+    the score, so the string itself stays digits.
+    """
     if percent is None:
         return "—"
-    return f"{percent}% {score_emoji(percent)}"
+    return f"{percent}%"
 
 
 def score_line(
@@ -130,8 +127,8 @@ def score_line(
     """One-line day and week adherence summary for the break window."""
     return " · ".join(
         (
-            _("Today: %s") % score_headline(today_percent),
-            _("This week: %s") % score_headline(week_percent),
+            _("Today %s") % score_headline(today_percent),
+            _("Week %s") % score_headline(week_percent),
         )
     )
 
@@ -171,13 +168,12 @@ def timeline_layout(
 
 
 def day_tooltip(day: str, stats: DailyStats) -> str:
-    """What a grid square says when the pointer rests on it."""
-    parts = _outcome_parts(stats)
-    return " · ".join(
+    """What a grid square says when the pointer rests on it: date, then counts."""
+    summary = outcome_summary(stats)
+    return "\n".join(
         (
-            date.fromisoformat(day).strftime("%a %d %b"),
-            ", ".join(parts) if parts else _("No breaks"),
-            score_headline(adherence_percent(stats)),
+            date.fromisoformat(day).strftime("%a %d %b").upper(),
+            summary if summary else _("Nothing recorded"),
         )
     )
 
@@ -191,11 +187,11 @@ def heat_level(stats: DailyStats) -> Optional[int]:
     percent = adherence_percent(stats)
     if percent is None:
         return None
-    if percent >= 90:
+    if percent >= 85:
         return 3
     if percent >= 70:
         return 2
-    if percent >= 40:
+    if percent >= 50:
         return 1
     return 0
 
@@ -220,14 +216,14 @@ def _last_filled_row(week: Sequence[Optional[str]]) -> int:
 
 def rating_label(percent: Optional[int]) -> str:
     if percent is None:
-        return _("No breaks due yet")
-    if percent >= 90:
-        return _("Excellent — you rarely miss a break")
+        return _("Nothing due yet today.")
+    if percent >= 85:
+        return _("Great week. You barely miss one.")
     if percent >= 70:
-        return _("Good — most breaks taken")
-    if percent >= 40:
-        return _("Could be better — many breaks slip by")
-    return _("Time to stand up more often")
+        return _("Good week. Most breaks taken.")
+    if percent >= 50:
+        return _("Half of them slipped by.")
+    return _("Let\'s get more of these.")
 
 
 def _counter(payload: dict, key: str) -> int:

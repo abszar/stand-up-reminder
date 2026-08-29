@@ -21,7 +21,10 @@ try:  # Sound cues are optional; the reminder works without them.
 except (ImportError, ValueError):  # pragma: no cover - depends on host packages
     GSound = None
 
+from . import pixels
+from . import pixelui as ui
 from .i18n import _, ngettext
+from .pixels import ART, PALETTE, ap
 from .scheduler import Phase, Scheduler, TimingMode, Transition
 from .settings import (
     BREAK_PRESETS,
@@ -41,6 +44,7 @@ from .stats import (
     day_tooltip,
     heat_level,
     heatmap_weeks,
+    outcome_summary,
     last_days,
     rating_label,
     score_headline,
@@ -55,97 +59,14 @@ from .stats import (
 APP_ID = "io.github.abdelali.StandUpReminder"
 APP_NAME = "Stand Up Reminder"
 ICON_NAME = "stand-up-reminder-symbolic"
+PAUSED_ICON_NAME = "stand-up-reminder-paused-symbolic"
 IDLE_POLL_SECONDS = 5
 PAUSE_PRESETS = (30 * 60, 60 * 60)
 # The standing pill: a figure, its count, and the gap it keeps from the edge.
-STANDING_ICON = "\N{STANDING PERSON}"
-PILL_EDGE_MARGIN = 12
-
-# One dot color per recorded outcome, on the break-card palette.
-TIMELINE_COLORS = {
-    "taken": "#7bc47f",
-    "away": "#8fb3a9",
-    "missed": "#e05d5d",
-    "skipped": "#f2a65a",
-    "snoozed": "#c9ddd5",
-}
-TIMELINE_TRACK_COLOR = "#18312e"
-
-# Grid shades, faint to strong, indexed by stats.heat_level.
-HEAT_COLORS = ("#2f5a52", "#3f7d5f", "#57a86d", "#7bc47f")
-HEAT_EMPTY_COLOR = "#1e3b37"
-GRID_LABEL_COLOR = "#8fb3a9"
-GRID_LABEL_WIDTH = 38
-GRID_MONTH_HEIGHT = 18
-GRID_GAP = 4
 
 
-def heat_cell_size(
-    width: float,
-    columns: int,
-    gap: float = GRID_GAP,
-    label_width: float = GRID_LABEL_WIDTH,
-) -> float:
-    """Side of a day square once labels and the gaps have their share."""
-    if columns <= 0:
-        return 0.0
-    usable = width - label_width - gap * (columns - 1)
-    return max(0.0, usable / columns)
-
-
-def heat_grid_height(
-    cell: float, gap: float = GRID_GAP, month_height: float = GRID_MONTH_HEIGHT
-) -> int:
-    """Height of a seven-row grid built from squares of this size."""
-    return int(month_height + 7 * cell + 6 * gap)
-
-
-def heat_cell_at(
-    x: float,
-    y: float,
-    columns: int,
-    cell: float,
-    gap: float = GRID_GAP,
-    label_width: float = GRID_LABEL_WIDTH,
-    month_height: float = GRID_MONTH_HEIGHT,
-) -> Optional[tuple[int, int]]:
-    """Grid position under a point, or None for labels, gaps, and margins."""
-    if cell <= 0 or columns <= 0:
-        return None
-    column, within_column = divmod(x - label_width, cell + gap)
-    row, within_row = divmod(y - month_height, cell + gap)
-    if not 0 <= column < columns or not 0 <= row < 7:
-        return None
-    if within_column > cell or within_row > cell:
-        return None
-    return int(column), int(row)
-
-
-COUNTDOWN_CALM_COLOR = "#f7f2e7"
-COUNTDOWN_URGENT_COLOR = "#e05d5d"
-
-
-def countdown_color(seconds_remaining: float, total_seconds: float) -> str:
-    """Warning countdown colour, white at the start and red at the break."""
-    if total_seconds <= 0:
-        return COUNTDOWN_URGENT_COLOR
-    left = min(1.0, max(0.0, seconds_remaining / total_seconds))
-    calm = hex_rgb(COUNTDOWN_CALM_COLOR)
-    urgent = hex_rgb(COUNTDOWN_URGENT_COLOR)
-    channels = (
-        round(255 * (urgent[index] + left * (calm[index] - urgent[index])))
-        for index in range(3)
-    )
-    return "#" + "".join(f"{channel:02x}" for channel in channels)
-
-
-def hex_rgb(color: str) -> tuple[float, float, float]:
-    value = color.lstrip("#")
-    return (
-        int(value[0:2], 16) / 255,
-        int(value[2:4], 16) / 255,
-        int(value[4:6], 16) / 255,
-    )
+# The pill sits flush against the right screen edge.
+PILL_EDGE_GAP = 0
 
 
 def format_duration(seconds: int) -> str:
@@ -153,20 +74,6 @@ def format_duration(seconds: int) -> str:
     minutes, remainder = divmod(seconds, 60)
     return f"{minutes:02d}:{remainder:02d}"
 
-
-def format_elapsed(seconds: int) -> str:
-    """Count-up time: minutes and seconds, gaining an hour field past one."""
-    seconds = max(0, int(seconds))
-    hours, remainder = divmod(seconds, 3600)
-    minutes, second = divmod(remainder, 60)
-    if hours:
-        return f"{hours:d}:{minutes:02d}:{second:02d}"
-    return f"{minutes:02d}:{second:02d}"
-
-
-def standing_label(seconds: int) -> str:
-    """Pill text: the standing figure and how long it has been counting."""
-    return f"{STANDING_ICON} {format_elapsed(seconds)}"
 
 
 def pill_position(fraction: float, screen_height: int, pill_height: int) -> int:
@@ -197,6 +104,11 @@ def duration_label(seconds: int) -> str:
     return " ".join(parts)
 
 
+def short_minutes(seconds: int) -> int:
+    """Whole minutes, for the button labels the pixel type has room for."""
+    return max(1, int(round(max(0, int(seconds)) / 60)))
+
+
 def idle_credit_threshold(
     idle_credit_seconds: float, break_seconds: float
 ) -> float:
@@ -211,27 +123,47 @@ def is_wayland_session(environ: Mapping[str, str]) -> bool:
     return environ.get("XDG_SESSION_TYPE", "").strip().lower() == "wayland"
 
 
+def countdown_color(seconds_remaining: int, urgent: bool) -> str:
+    """The clock is bone while there is time and coral in the last ten seconds."""
+    return PALETTE["coral"] if urgent else PALETTE["bone"]
+
+
+def is_urgent(seconds_remaining: int) -> bool:
+    """The last ten seconds, where the clock reddens and shudders."""
+    return 0 <= int(seconds_remaining) <= 10
+
+
+def shudder_period(seconds_remaining: int) -> Optional[int]:
+    """Milliseconds per shudder frame, tightening under five seconds."""
+    if not is_urgent(seconds_remaining):
+        return None
+    return 80 if seconds_remaining <= 5 else 120
+
+
 @dataclass(frozen=True)
 class BreakView:
     title: str
     countdown: str
-    away: str
+    secondary: str
+    prompt: str
     can_snooze: bool
     can_skip: bool
     can_return: bool
     can_miss: bool = False
     can_stand: bool = False
+    title_color: str = PALETTE["bone"]
 
 
 def break_view(phase: Phase, seconds_remaining: int, away_seconds: int) -> BreakView:
-    # A work phase means the window is counting down to the break itself.
-    # Its actions match the break's, so a break can be put off before it
+    # A work phase means the card is counting down to the break itself. Its
+    # actions match the break's, so a break can be put off before it
     # interrupts anything.
     if phase is Phase.WORK:
         return BreakView(
             title=_("Break coming up"),
             countdown=format_duration(seconds_remaining),
-            away=_("Time to stand up in %s") % format_duration(seconds_remaining),
+            secondary=_("Standing up in %s") % format_duration(seconds_remaining),
+            prompt=_("Shoulders down.\nTake a few steps."),
             can_snooze=True,
             can_skip=True,
             can_return=False,
@@ -239,9 +171,14 @@ def break_view(phase: Phase, seconds_remaining: int, away_seconds: int) -> Break
     active = phase is Phase.BREAK
     awaiting = phase is Phase.AWAITING_RETURN
     return BreakView(
-        title=_("Break complete") if awaiting else _("Time to stand up"),
+        title=_("Nice one") if awaiting else _("Up you get"),
         countdown=format_duration(seconds_remaining),
-        away=_("Away for %s") % format_duration(away_seconds),
+        secondary=_("Up for %s") % format_duration(away_seconds),
+        prompt=(
+            _("Back to it when\nyou're ready.")
+            if awaiting
+            else _("Shoulders down.\nTake a few steps.")
+        ),
         can_snooze=active,
         can_skip=active,
         can_return=awaiting,
@@ -249,7 +186,21 @@ def break_view(phase: Phase, seconds_remaining: int, away_seconds: int) -> Break
         # A standing desk answers the break in either state: while it runs
         # and once it is over and waiting to be confirmed.
         can_stand=active or awaiting,
+        title_color=PALETTE["mint"] if awaiting else PALETTE["bone"],
     )
+
+
+def break_hint(view: BreakView) -> str:
+    """The key line under the buttons, naming only the keys on offer."""
+    if view.can_return:
+        keys = [_("ENTER")]
+    elif view.can_snooze:
+        keys = [_("S SNOOZE"), _("K SKIP")]
+    else:
+        keys = []
+    if view.can_stand:
+        keys.append(_("T STANDING"))
+    return " · ".join(keys)
 
 
 @dataclass(frozen=True)
@@ -284,7 +235,7 @@ def indicator_view(
         )
     if phase is Phase.AWAITING_RETURN:
         return IndicatorView(
-            _("Away for %s") % format_duration(away_seconds), False, True
+            _("Up for %s") % format_duration(away_seconds), False, True
         )
     return IndicatorView(
         _("Next break in %s") % format_duration(seconds_remaining),
@@ -307,207 +258,212 @@ def indicator_label(
     return ""
 
 
-def break_progress_fraction(seconds: int, total_seconds: int) -> float:
-    if total_seconds <= 0:
-        return 0.0
-    return min(1.0, max(0.0, float(seconds) / float(total_seconds)))
+def menu_summary(stats: DailyStats) -> str:
+    """The menu's day row: block glyphs, then the counts they stand for."""
+    summary = outcome_summary(stats)
+    if not summary:
+        return _("Nothing recorded yet")
+    return f"{menu_blocks(stats)}  {summary}"
+
+
+def menu_blocks(stats: DailyStats, cap: int = 8) -> str:
+    """Today's breaks as filled and hollow blocks, for the menu row.
+
+    The panel menu is drawn by the shell and cannot carry the timeline, so
+    the outcomes are spelled with block glyphs instead: filled for a break
+    that was kept, hollow for one that was not.
+    """
+    kept = stats.taken + stats.away
+    lost = stats.missed + stats.skipped
+    if kept + lost > cap:
+        # Keep the row short by scaling the blocks down to the cap.
+        shown = max(1, round(cap * kept / (kept + lost)))
+        return "\u25ae" * shown + "\u25af" * (cap - shown)
+    return "\u25ae" * kept + "\u25af" * lost
 
 
 STYLE_SHEET = b"""
-window.break-window,
-.break-card {
-    background-color: #294c47;
-    color: #e9f2ed;
+/* The pixel world: flat fills, hard 4px edges, one bitmap face. */
+window.pixel-window,
+window.pixel-window * {
+    font-family: Silkscreen, "Silkscreen", monospace;
 }
-window.break-dimmer {
-    background-color: #18312e;
+window.pixel-window {
+    background-color: transparent;
 }
-.break-eyebrow {
-    color: #f2a65a;
-    font-family: Cantarell, sans-serif;
-    font-size: 13px;
+.pixel-title {
+    color: #f2ece0;
+    font-size: 24px;
+    font-weight: 700;
+    letter-spacing: 1px;
+}
+.pixel-title-done {
+    color: #6fe0a8;
+}
+.pixel-window-title {
+    color: #f2ece0;
+    font-size: 32px;
     font-weight: 700;
     letter-spacing: 2px;
 }
-.break-countdown {
-    color: #f7f2e7;
-    font-family: "DejaVu Sans Mono", monospace;
-    font-size: 74px;
-    font-weight: 700;
-}
-.break-away {
-    color: #f2a65a;
-    font-family: "DejaVu Sans Mono", monospace;
-    font-size: 21px;
-    font-weight: 700;
-    letter-spacing: 1px;
-}
-button.break-return,
-button.break-snooze {
-    min-height: 38px;
-    border: 1px solid #f2a65a;
-    background-image: none;
-    border-radius: 6px;
-    color: #18312e;
-    background-color: #f2a65a;
-    box-shadow: none;
-    font-family: Cantarell, sans-serif;
-    font-size: 15px;
-    font-weight: 700;
-}
-button.break-skip {
-    min-height: 38px;
-    border: 1px solid #c9ddd5;
-    background-image: none;
-    border-radius: 6px;
-    color: #e9f2ed;
-    background-color: #294c47;
-    box-shadow: none;
-    font-family: Cantarell, sans-serif;
-    font-size: 15px;
-    font-weight: 700;
-}
-.break-prompt {
-    color: #c9ddd5;
-    font-family: Cantarell, sans-serif;
+.pixel-secondary {
+    color: #9a8fb5;
     font-size: 16px;
-}
-.break-scores {
-    color: #c9ddd5;
-    font-family: Cantarell, sans-serif;
-    font-size: 13px;
     letter-spacing: 1px;
 }
-.stats-score {
-    color: #f7f2e7;
-    font-family: "DejaVu Sans Mono", monospace;
-    font-size: 52px;
-    font-weight: 700;
-}
-.stats-day-name {
-    color: #8fb3a9;
-    font-family: Cantarell, sans-serif;
-    font-size: 12px;
-    font-weight: 700;
+.pixel-prompt {
+    color: #f2ece0;
+    font-size: 16px;
     letter-spacing: 1px;
 }
-.stats-day-count {
-    color: #f7f2e7;
-    font-family: "DejaVu Sans Mono", monospace;
-    font-size: 22px;
-    font-weight: 700;
+.pixel-hint {
+    color: #4a3f66;
+    font-size: 16px;
+    letter-spacing: 2px;
 }
-.break-shortcuts {
-    color: #8fb3a9;
-    font-family: Cantarell, sans-serif;
-    font-size: 12px;
+.pixel-caption {
+    color: #9a8fb5;
+    font-size: 16px;
+    letter-spacing: 2px;
+}
+.pixel-verdict {
+    font-size: 16px;
     letter-spacing: 1px;
 }
-window.standing-pill {
-    background-color: transparent;
+.pixel-verdict-mint { color: #6fe0a8; }
+.pixel-verdict-amber { color: #ffb03a; }
+.pixel-verdict-coral { color: #ff5f5f; }
+.pixel-verdict-mist { color: #9a8fb5; }
+.pixel-rule {
+    background-color: #2e2740;
 }
-.standing-pill-body {
-    background-color: #294c47;
-    border: 1px solid #f2a65a;
-    border-radius: 18px;
-}
-.standing-pill-time {
-    color: #f2a65a;
-    font-family: "DejaVu Sans Mono", monospace;
+button.pixel-button {
+    min-height: 40px;
+    padding: 0 8px;
+    border: 4px solid #4a3f66;
+    border-radius: 0;
+    background-image: none;
+    background-color: #2e2740;
+    color: #f2ece0;
+    box-shadow: none;
+    text-shadow: none;
     font-size: 16px;
     font-weight: 700;
     letter-spacing: 1px;
+    outline-color: #ffb03a;
+    outline-style: solid;
+    outline-width: 4px;
+    outline-offset: -8px;
 }
-button.standing-pill-stop {
-    min-width: 22px;
-    min-height: 22px;
+button.pixel-button:hover {
+    background-color: #4a3f66;
+}
+/* Pressed moves the label one art pixel down without changing the size. */
+button.pixel-button:active {
+    background-color: #231d33;
+    border-top-width: 8px;
+    border-bottom-width: 0;
+}
+button.pixel-button:disabled {
+    background-color: #1a1524;
+    border-color: #2e2740;
+    color: #4a3f66;
+}
+button.pixel-button-primary {
+    background-color: #ffb03a;
+    border-color: #ffb03a;
+    color: #1a1524;
+    outline-color: #f2ece0;
+}
+button.pixel-button-primary:hover {
+    background-color: #ffd08a;
+    border-color: #ffd08a;
+}
+button.pixel-button-primary:active {
+    background-color: #e09420;
+    border-color: #e09420;
+}
+button.pixel-button-standing {
+    background-color: #1a1524;
+    border-color: #5fc8ff;
+    color: #5fc8ff;
+}
+button.pixel-button-standing:hover {
+    background-color: #2e2740;
+}
+button.pixel-button-standing:active {
+    background-color: #231d33;
+}
+/* Segmented duration cells in the settings panel. */
+button.pixel-segment {
+    min-height: 40px;
+    padding: 0 4px;
+    border: 4px solid #4a3f66;
+    border-radius: 0;
+    background-image: none;
+    background-color: #2e2740;
+    color: #9a8fb5;
+    box-shadow: none;
+    text-shadow: none;
+    font-size: 16px;
+    font-weight: 400;
+    outline-color: #ffb03a;
+    outline-style: solid;
+    outline-width: 4px;
+    outline-offset: -8px;
+}
+button.pixel-segment:hover {
+    background-color: #4a3f66;
+    color: #f2ece0;
+}
+button.pixel-segment-on {
+    background-color: #ffb03a;
+    border-color: #ffb03a;
+    color: #1a1524;
+}
+button.pixel-segment-on:hover {
+    background-color: #ffd08a;
+    border-color: #ffd08a;
+    color: #1a1524;
+}
+button.pixel-check {
     padding: 0;
     border: 0;
-    border-radius: 11px;
+    border-radius: 0;
     background-image: none;
-    background-color: #18312e;
-    color: #c9ddd5;
+    background-color: transparent;
     box-shadow: none;
-    font-family: Cantarell, sans-serif;
-    font-size: 12px;
-    font-weight: 700;
+    color: #f2ece0;
+    font-size: 16px;
+    outline-color: #ffb03a;
+    outline-style: solid;
+    outline-width: 4px;
+    outline-offset: -4px;
 }
-button.standing-pill-stop:hover {
-    background-color: #e05d5d;
-    color: #18312e;
+button.pixel-check:hover {
+    color: #ffb03a;
 }
-button.break-stand {
-    min-height: 38px;
-    border: 1px solid #7bc47f;
-    background-image: none;
-    border-radius: 6px;
-    color: #18312e;
-    background-color: #7bc47f;
-    box-shadow: none;
-    font-family: Cantarell, sans-serif;
-    font-size: 15px;
-    font-weight: 700;
+tooltip.background,
+tooltip {
+    background-color: #1a1524;
+    border: 4px solid #f2ece0;
+    border-radius: 0;
+    color: #f2ece0;
 }
-progressbar.break-progress trough {
-    min-height: 8px;
-    border: 0;
-    border-radius: 4px;
-    background-color: #18312e;
-}
-progressbar.break-progress progress {
-    min-height: 8px;
-    border: 0;
-    border-radius: 4px;
-    background-color: #f2a65a;
+tooltip label {
+    font-family: Silkscreen, monospace;
+    font-size: 16px;
+    color: #f2ece0;
 }
 """
 
 
-class TimelineStrip(Gtk.DrawingArea):
-    """A horizontal day track with one colored dot per recorded outcome."""
-
-    def __init__(self, height: int = 26, dot_radius: float = 5.0) -> None:
-        super().__init__()
-        self._points: list[tuple[float, str]] = []
-        self._dot_radius = dot_radius
-        self.set_size_request(-1, height)
-        self.connect("draw", self._on_draw)
-
-    def set_points(self, points: Sequence[tuple[float, str]]) -> None:
-        self._points = list(points)
-        self.queue_draw()
-
-    def _on_draw(self, _area, context) -> bool:
-        width = self.get_allocated_width()
-        height = self.get_allocated_height()
-        margin = self._dot_radius + 3
-        track = width - 2 * margin
-        if track <= 0:
-            return False
-        middle = height / 2
-        context.set_line_width(4)
-        context.set_line_cap(1)  # cairo.LINE_CAP_ROUND
-        context.set_source_rgb(*hex_rgb(TIMELINE_TRACK_COLOR))
-        context.move_to(margin, middle)
-        context.line_to(width - margin, middle)
-        context.stroke()
-        for fraction, outcome in self._points:
-            color = TIMELINE_COLORS.get(outcome)
-            if color is None:
-                continue
-            context.set_source_rgb(*hex_rgb(color))
-            context.arc(
-                margin + fraction * track, middle, self._dot_radius, 0, 6.2832
-            )
-            context.fill()
-        return False
-
-
 class HeatGrid(Gtk.DrawingArea):
-    """The day grid: a column per week, a row per weekday, filling its width.
+    """Twelve weeks of days: a column per week, a row per weekday.
 
-    Days are square and sized from the width on offer, so the grid spans
-    the popup however wide it is drawn.
+    Tiles are 8 art pixels square with a 2 art pixel gutter, so the grid
+    reads as twelve separate weeks rather than one slab. On opening, the
+    columns paint left to right.
     """
 
     # Sunday opens each column; this date anchors the weekday row labels.
@@ -520,11 +476,12 @@ class HeatGrid(Gtk.DrawingArea):
         self._levels: dict[str, Optional[int]] = {}
         self._tooltips: dict[str, str] = {}
         self._months: dict[int, str] = {}
-        self._height = 0
+        self._columns_shown = 0
+        self._timer = 0
         self.set_has_tooltip(True)
         self.connect("draw", self._on_draw)
         self.connect("query-tooltip", self._on_tooltip)
-        self.connect("size-allocate", lambda *_args: self._sync_height())
+        self.connect("unmap", lambda *_args: self._stop())
 
     def set_history(self, history: Sequence[tuple[str, DailyStats]]) -> None:
         self._weeks = heatmap_weeks([day for day, _stats in history])
@@ -536,73 +493,74 @@ class HeatGrid(Gtk.DrawingArea):
             first = next((day for day in days if day), None)
             if first is None:
                 continue
-            month = date.fromisoformat(first).strftime("%b")
+            month = date.fromisoformat(first).strftime("%b").upper()
             if month != shown:
                 shown = month
                 self._months[column] = month
-        self._sync_height()
+        width, height = pixels.heat_grid_size(len(self._weeks))
+        self.set_size_request(width, height + ap(6))
         self.queue_draw()
 
-    def _cell_size(self) -> float:
-        return heat_cell_size(self.get_allocated_width(), len(self._weeks))
-
-    def _sync_height(self) -> None:
-        cell = self._cell_size()
-        if cell <= 0:
+    def play_fill(self) -> None:
+        """Paint the columns in, left to right, 40 ms apart."""
+        self._stop()
+        if not ui.animations_enabled():
+            self._columns_shown = len(self._weeks)
+            self.queue_draw()
             return
-        height = heat_grid_height(cell)
-        if height != self._height:
-            self._height = height
-            self.set_size_request(-1, height)
+        self._columns_shown = 0
+        self._timer = GLib.timeout_add(40, self._next_column)
+        self.queue_draw()
+
+    def _stop(self) -> None:
+        if self._timer:
+            GLib.source_remove(self._timer)
+            self._timer = 0
+        self._columns_shown = len(self._weeks)
+
+    def _next_column(self) -> bool:
+        self._columns_shown += 1
+        self.queue_draw()
+        if self._columns_shown >= len(self._weeks):
+            self._timer = 0
+            return GLib.SOURCE_REMOVE
+        return GLib.SOURCE_CONTINUE
 
     def _on_draw(self, _area, context) -> bool:
-        cell = self._cell_size()
-        if cell <= 0:
-            return False
-        context.select_font_face("Cantarell")
-        context.set_font_size(11)
-        context.set_source_rgb(*hex_rgb(GRID_LABEL_COLOR))
+        tile = ap(pixels.HEAT_TILE)
+        step = ap(pixels.HEAT_TILE + pixels.HEAT_GUTTER)
+        left_edge = ap(pixels.HEAT_LABELS + pixels.HEAT_GUTTER)
+        top = ap(6)
+        context.select_font_face("Silkscreen")
+        context.set_font_size(16)
+        context.set_source_rgb(*pixels.rgb(PALETTE["mist"]))
         for row in self.LABEL_ROWS:
-            name = (self.ROW_ANCHOR + timedelta(days=row)).strftime("%a")
+            name = (self.ROW_ANCHOR + timedelta(days=row)).strftime("%a").upper()
             extents = context.text_extents(name)
             context.move_to(
-                GRID_LABEL_WIDTH - 8 - extents.width,
-                GRID_MONTH_HEIGHT + row * (cell + GRID_GAP) + cell / 2 + 4,
+                left_edge - ap(2) - extents.width - extents.x_bearing,
+                top + row * step + tile - ART,
             )
             context.show_text(name)
         for column, month in self._months.items():
-            context.move_to(
-                GRID_LABEL_WIDTH + column * (cell + GRID_GAP),
-                GRID_MONTH_HEIGHT - 6,
-            )
+            if column >= self._columns_shown:
+                continue
+            context.move_to(left_edge + column * step, top - ART)
             context.show_text(month)
-
-        radius = min(3.5, cell / 4)
         for column, days in enumerate(self._weeks):
+            if column >= self._columns_shown:
+                continue
             for row, day in enumerate(days):
                 level = self._levels.get(day) if day else None
-                color = HEAT_EMPTY_COLOR if level is None else HEAT_COLORS[level]
-                left = GRID_LABEL_WIDTH + column * (cell + GRID_GAP)
-                top = GRID_MONTH_HEIGHT + row * (cell + GRID_GAP)
-                context.new_sub_path()
-                context.arc(left + cell - radius, top + radius, radius, -1.5708, 0)
-                context.arc(
-                    left + cell - radius, top + cell - radius, radius, 0, 1.5708
+                context.set_source_rgb(*pixels.rgb(pixels.heat_hex(level)))
+                context.rectangle(
+                    left_edge + column * step, top + row * step, tile, tile
                 )
-                context.arc(
-                    left + radius, top + cell - radius, radius, 1.5708, 3.1416
-                )
-                context.arc(left + radius, top + radius, radius, 3.1416, 4.7124)
-                context.close_path()
-                context.set_source_rgb(*hex_rgb(color))
                 context.fill()
         return False
 
     def _on_tooltip(self, _widget, x, y, _keyboard, tooltip) -> bool:
-        cell = self._cell_size()
-        if cell <= 0:
-            return False
-        at = heat_cell_at(x, y, len(self._weeks), cell)
+        at = pixels.heat_tile_at(x, y - ap(6), len(self._weeks))
         if at is None:
             return False
         column, row = at
@@ -615,34 +573,34 @@ class HeatGrid(Gtk.DrawingArea):
 
 
 class StandingPill(Gtk.Window):
-    """A small pill on the right edge counting how long the user is standing.
+    """The standing HUD: a bobbing face over stacked digits, docked right.
 
-    It stays above other windows without taking focus, and is dragged up and
-    down the edge; the height it is left at is reported as a fraction of the
-    screen so that it can be restored on the next stand.
+    It is the only surface in the application with a coloured ring at rest,
+    which is what makes standing mode read from across the desk. It is
+    dragged up and down the right edge and never sideways.
     """
+
+    WIDTH = ap(11)
+    DIGIT_SCALE = ART
+    BOB_MS = 500
 
     def __init__(self, on_stop, on_move) -> None:
         super().__init__(type=Gtk.WindowType.TOPLEVEL, title=_("Standing"))
         self._on_move = on_move
         self._fraction = 0.5
         self._drag_offset: Optional[float] = None
-        self._placed_width = 0
-        self.set_decorated(False)
-        self.set_resizable(False)
-        self.set_keep_above(True)
+        self._rows: tuple[str, ...] = ("00", "00")
+        self._ring = PALETTE["sky"]
+        self._bob = 0
+        self._bob_timer = 0
+        self._flash = 0
+        ui.keep_above(self)
         self.set_accept_focus(False)
         self.set_focus_on_map(False)
-        self.set_skip_taskbar_hint(True)
-        self.set_skip_pager_hint(True)
         self.set_type_hint(Gdk.WindowTypeHint.UTILITY)
-        self.stick()
-        self.set_app_paintable(True)
-        self.get_style_context().add_class("standing-pill")
-        screen = self.get_screen()
-        visual = screen.get_rgba_visual() if screen is not None else None
-        if visual is not None:
-            self.set_visual(visual)
+        ui.use_rgba_visual(self)
+        self.set_size_request(self.WIDTH, pixels.pill_height(self._rows))
+        self.connect("draw", self._on_draw)
         self.add_events(
             Gdk.EventMask.BUTTON_PRESS_MASK
             | Gdk.EventMask.BUTTON_RELEASE_MASK
@@ -651,34 +609,144 @@ class StandingPill(Gtk.Window):
         self.connect("button-press-event", self._on_press)
         self.connect("button-release-event", self._on_release)
         self.connect("motion-notify-event", self._on_motion)
-        self.connect("size-allocate", self._on_size_allocate)
         self.connect("delete-event", lambda *_args: True)
 
-        body = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        body.set_border_width(7)
-        body.get_style_context().add_class("standing-pill-body")
+        column = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        column.set_border_width(ART * 2)
 
-        self.time_label = Gtk.Label(label=standing_label(0))
-        self.time_label.get_style_context().add_class("standing-pill-time")
-        self.time_label.set_tooltip_text(_("Standing since your last break"))
+        self.face = ui.Face(scale=ART, sheet="face-bob")
+        self.face.set_face("rest", PALETTE["sky"])
+        column.pack_start(self.face, False, False, 0)
 
-        stop_button = Gtk.Button(label="\u2715")
-        stop_button.get_style_context().add_class("standing-pill-stop")
-        stop_button.set_tooltip_text(_("I'm sitting down — stop this timer"))
+        self.digit_rows = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        self.digit_rows.set_margin_top(ap(2))
+        column.pack_start(self.digit_rows, False, False, 0)
+        self._digit_widgets: list[ui.SpriteDigits] = []
+        self._rules: list[Gtk.DrawingArea] = []
+
+        stop_button = Gtk.Button()
+        stop_button.get_style_context().add_class("pixel-check")
+        stop_button.set_relief(Gtk.ReliefStyle.NONE)
+        stop_button.set_tooltip_text(_("Sit down and stop this timer"))
+        stop_glyph = Gtk.DrawingArea()
+        stop_glyph.set_size_request(6 * ART, 6 * ART)
+        stop_glyph.connect(
+            "draw",
+            lambda _area, context: ui.SPRITES.paint(
+                context, "checkbox-on", 0, 0, ART, PALETTE["mist"]
+            ),
+        )
+        stop_button.add(stop_glyph)
         stop_button.connect("clicked", on_stop)
+        stop_holder = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        stop_holder.set_margin_top(ap(2))
+        stop_holder.set_halign(Gtk.Align.CENTER)
+        stop_holder.pack_start(stop_button, False, False, 0)
+        column.pack_start(stop_holder, False, False, 0)
 
-        body.pack_start(self.time_label, False, False, 0)
-        body.pack_start(stop_button, False, False, 0)
-        self.add(body)
+        self.add(column)
+        self._build_rows(self._rows)
+
+    def _build_rows(self, rows: Sequence[str]) -> None:
+        for child in self.digit_rows.get_children():
+            self.digit_rows.remove(child)
+        self._digit_widgets = []
+        for index, text in enumerate(rows):
+            if index:
+                rule = Gtk.DrawingArea()
+                rule.set_size_request(ap(5), ART)
+                rule.set_halign(Gtk.Align.CENTER)
+                rule.set_margin_top(ART)
+                rule.set_margin_bottom(ART)
+                rule.connect("draw", self._draw_rule)
+                self.digit_rows.pack_start(rule, False, False, 0)
+            digits = ui.SpriteDigits(scale=self.DIGIT_SCALE)
+            digits.set_text(text, PALETTE["bone"])
+            digits.set_halign(Gtk.Align.CENTER)
+            self.digit_rows.pack_start(digits, False, False, 0)
+            self._digit_widgets.append(digits)
+        self.digit_rows.show_all()
+
+    @staticmethod
+    def _draw_rule(area, context) -> bool:
+        context.set_source_rgb(*pixels.rgb(PALETTE["edge"]))
+        context.rectangle(
+            0, 0, area.get_allocated_width(), area.get_allocated_height()
+        )
+        context.fill()
+        return False
 
     def set_seconds(self, seconds: int) -> None:
-        self.time_label.set_text(standing_label(seconds))
+        rows = pixels.pill_rows(seconds)
+        if len(rows) != len(self._rows):
+            grew = len(rows) > len(self._rows)
+            self._rows = rows
+            self._build_rows(rows)
+            self.resize(self.WIDTH, pixels.pill_height(rows))
+            self._place()
+            if grew:
+                self._flash_ring()
+        else:
+            self._rows = rows
+            for widget, text in zip(self._digit_widgets, rows):
+                widget.set_text(text, PALETTE["bone"])
+
+    def _flash_ring(self) -> None:
+        """A short sky-bone-sky flash rewards passing the hour."""
+        if not ui.animations_enabled():
+            return
+        self._flash = 0
+
+        def step() -> bool:
+            self._flash += 1
+            self._ring = PALETTE["bone"] if self._flash == 1 else PALETTE["sky"]
+            self.queue_draw()
+            return GLib.SOURCE_CONTINUE if self._flash < 2 else GLib.SOURCE_REMOVE
+
+        GLib.timeout_add(100, step)
+
+    def _on_draw(self, _widget, context) -> bool:
+        width = self.get_allocated_width()
+        height = self.get_allocated_height()
+        context.set_operator(1)
+        context.set_source_rgb(*pixels.rgb(self._ring))
+        context.rectangle(0, 0, width, height)
+        context.fill()
+        context.set_source_rgb(*pixels.rgb(PALETTE["ink"]))
+        context.rectangle(ART, ART, width - 2 * ART, height - 2 * ART)
+        context.fill()
+        context.set_operator(2)
+        return False
 
     def show_at(self, fraction: float) -> None:
         self._fraction = min(1.0, max(0.0, float(fraction)))
         self.show_all()
         self._place()
         self.present()
+        self._slide_in()
+        self._start_bob()
+
+    def hide(self) -> None:  # noqa: A003 - matches Gtk.Widget.hide
+        self._stop_bob()
+        super().hide()
+
+    def _start_bob(self) -> None:
+        self._stop_bob()
+        if not ui.animations_enabled():
+            return
+        self._bob_timer = GLib.timeout_add(self.BOB_MS, self._next_bob)
+
+    def _stop_bob(self) -> None:
+        if self._bob_timer:
+            GLib.source_remove(self._bob_timer)
+            self._bob_timer = 0
+
+    def _next_bob(self) -> bool:
+        self._bob = 1 - self._bob
+        self.face.set_face(
+            "rest" if self._bob == 0 else "blink", PALETTE["sky"]
+        )
+        return GLib.SOURCE_CONTINUE
 
     def _monitor_geometry(self):
         display = Gdk.Display.get_default()
@@ -687,27 +755,37 @@ class StandingPill(Gtk.Window):
         monitor = display.get_primary_monitor() or display.get_monitor(0)
         return monitor.get_geometry() if monitor is not None else None
 
-    def _place(self) -> None:
+    def _place(self, offset: int = 0) -> None:
         geometry = self._monitor_geometry()
         if geometry is None:
             return
         width, height = self.get_size()
-        self._placed_width = width
         self.move(
-            geometry.x + geometry.width - width - PILL_EDGE_MARGIN,
+            geometry.x + geometry.width - width - PILL_EDGE_GAP + offset,
             geometry.y + pill_position(self._fraction, geometry.height, height),
         )
 
-    def _on_size_allocate(self, _widget, allocation) -> None:
-        # The pill grows an hour field as it counts; keep it on the edge.
-        if self._drag_offset is None and allocation.width != self._placed_width:
-            self._place()
+    def _slide_in(self) -> None:
+        """Four steps of three art pixels in from off-screen right."""
+        if not ui.animations_enabled():
+            return
+        steps = [ap(9), ap(6), ap(3), 0]
+        self._place(steps[0])
+
+        def step() -> bool:
+            steps.pop(0)
+            self._place(steps[0])
+            return GLib.SOURCE_CONTINUE if len(steps) > 1 else GLib.SOURCE_REMOVE
+
+        GLib.timeout_add(40, step)
 
     def _on_press(self, _widget, event) -> bool:
         if event.button != 1:
             return False
         _x, y = self.get_position()
         self._drag_offset = event.y_root - y
+        self._ring = PALETTE["bone"]
+        self.queue_draw()
         return True
 
     def _on_motion(self, _widget, event) -> bool:
@@ -718,36 +796,36 @@ class StandingPill(Gtk.Window):
             return False
         width, height = self.get_size()
         top = int(event.y_root - self._drag_offset) - geometry.y
-        travel = max(0, geometry.height - height)
-        top = max(0, min(travel, top))
+        top = max(0, min(max(0, geometry.height - height), top))
         self._fraction = pill_fraction(top, geometry.height, height)
         self.move(
-            geometry.x + geometry.width - width - PILL_EDGE_MARGIN,
+            geometry.x + geometry.width - width - PILL_EDGE_GAP,
             geometry.y + top,
         )
         return True
 
-    def _on_release(self, _widget, event) -> bool:
+    def _on_release(self, _widget, _event) -> bool:
         if self._drag_offset is None:
             return False
         self._drag_offset = None
+        self._ring = PALETTE["sky"]
+        self.queue_draw()
         self._on_move(self._fraction)
         return True
 
 
 class DimmerWindow(Gtk.Window):
-    """A dark cover for monitors that are not showing the break card."""
+    """A scanlined cover for the monitors that are not showing the card."""
+
+    BANDS = 6
 
     def __init__(self) -> None:
         super().__init__(type=Gtk.WindowType.TOPLEVEL)
-        self.set_decorated(False)
-        self.set_skip_taskbar_hint(True)
-        self.set_skip_pager_hint(True)
-        self.set_keep_above(True)
+        ui.keep_above(self)
         self.set_accept_focus(False)
         self.set_type_hint(Gdk.WindowTypeHint.SPLASHSCREEN)
-        self.stick()
-        self.get_style_context().add_class("break-dimmer")
+        self._bands = self.BANDS
+        self.connect("draw", self._on_draw)
         self.connect("delete-event", lambda *_args: True)
 
     def cover_monitor(self, monitor_index: int) -> None:
@@ -755,9 +833,47 @@ class DimmerWindow(Gtk.Window):
         if screen is None:
             return
         self.fullscreen_on_monitor(screen, monitor_index)
+        self._wipe_down()
+
+    def _wipe_down(self) -> None:
+        if not ui.animations_enabled():
+            self._bands = self.BANDS
+            self.queue_draw()
+            return
+        self._bands = 0
+        self.queue_draw()
+
+        def step() -> bool:
+            self._bands += 1
+            self.queue_draw()
+            return (
+                GLib.SOURCE_CONTINUE if self._bands < self.BANDS else GLib.SOURCE_REMOVE
+            )
+
+        GLib.timeout_add(40, step)
+
+    def _on_draw(self, _widget, context) -> bool:
+        width = self.get_allocated_width()
+        height = self.get_allocated_height()
+        band = height / self.BANDS
+        covered = height if self._bands >= self.BANDS else int(band * self._bands)
+        context.set_source_rgb(*pixels.rgb(PALETTE["void"]))
+        context.rectangle(0, 0, width, covered)
+        context.fill()
+        context.set_source_rgb(*pixels.rgb(PALETTE["ink"]))
+        for y in range(0, covered, 2 * ART):
+            context.rectangle(0, y, width, ART)
+        context.fill()
+        return False
 
 
-class BreakWindow(Gtk.ApplicationWindow):
+class BreakWindow(Gtk.ApplicationWindow, ui.PixelFrameWindow):
+    """The card that interrupts you: clock, bar, prompt, actions, day track."""
+
+    WIDTH = ap(120)
+    HEIGHT = ap(128)
+    TICK_MS = 40
+
     def __init__(
         self,
         application: Gtk.Application,
@@ -773,119 +889,117 @@ class BreakWindow(Gtk.ApplicationWindow):
         self.break_seconds = break_seconds
         self.warning_seconds = 0
         self._wayland = wayland
+        self._clock = 0
+        self._timer = 0
+        self._phase: Optional[Phase] = None
         self.set_role("stand-up-break")
-        self.set_default_size(440, 380)
-        self.set_resizable(False)
-        self.set_decorated(False)
+        self.set_default_size(self.WIDTH, self.HEIGHT)
+        self.set_size_request(self.WIDTH, self.HEIGHT)
+        ui.keep_above(self)
         self.set_position(Gtk.WindowPosition.CENTER_ALWAYS)
-        self.set_keep_above(True)
-        self.set_skip_taskbar_hint(True)
-        self.set_skip_pager_hint(True)
-        self.set_type_hint(Gdk.WindowTypeHint.DIALOG)
         self.set_urgency_hint(True)
-        self.stick()
-        self.get_style_context().add_class("break-window")
+        self.get_style_context().add_class("pixel-window")
+        self.setup_frame()
         self.connect("delete-event", self._ignore_close)
         self.connect("key-press-event", self._on_key_press)
 
-        card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-        card.set_border_width(30)
-        card.get_style_context().add_class("break-card")
+        card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        card.set_border_width(ap(2) + ui.CARD_PADDING)
 
-        self.eyebrow = Gtk.Label(label=_("Time to stand up").upper())
-        self.eyebrow.set_xalign(0.0)
-        self.eyebrow.get_style_context().add_class("break-eyebrow")
+        self.title = ui.pixel_label(_("Time to stand up"), "pixel-title")
+        card.pack_start(self.title, False, False, 0)
 
-        self.countdown = Gtk.Label(label=format_duration(break_seconds))
-        self.countdown.set_xalign(0.0)
-        self.countdown.get_style_context().add_class("break-countdown")
+        self.countdown = ui.Countdown()
+        self.countdown.set_margin_top(ap(3))
+        card.pack_start(self.countdown, False, False, 0)
 
-        self.away = Gtk.Label(label=_("Away for %s") % format_duration(0))
-        self.away.set_xalign(0.0)
-        self.away.get_style_context().add_class("break-away")
+        self.secondary = ui.pixel_label("", "pixel-secondary")
+        self.secondary.set_margin_top(ap(2))
+        card.pack_start(self.secondary, False, False, 0)
 
-        self.progress = Gtk.ProgressBar()
-        self.progress.set_fraction(1.0)
-        self.progress.get_style_context().add_class("break-progress")
+        self.progress = ui.CellBar()
+        self.progress.set_margin_top(ap(4))
+        card.pack_start(self.progress, False, False, 0)
 
-        prompt = Gtk.Label(
-            label=_("Stand tall. Let your shoulders drop. Take a few steps.")
+        self.prompt = ui.pixel_label(
+            _("Shoulders down.\nTake a few steps."), "pixel-prompt"
         )
-        prompt.set_xalign(0.0)
-        prompt.set_line_wrap(True)
-        prompt.get_style_context().add_class("break-prompt")
+        self.prompt.set_justify(Gtk.Justification.CENTER)
+        self.prompt.set_margin_top(ap(4))
+        card.pack_start(self.prompt, False, False, 0)
 
-        self.break_actions = Gtk.Box(
-            orientation=Gtk.Orientation.HORIZONTAL, spacing=8
-        )
+        # Row one carries the full-width action; row two the pair beneath it.
+        self.first_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
 
-        # Both action labels name the configured durations; they are replaced
-        # by set_snooze_seconds/set_work_seconds once settings are known.
-        self.snooze_button = Gtk.Button(label=_("Snooze"))
-        self.snooze_button.set_hexpand(True)
-        self.snooze_button.set_no_show_all(True)
-        self.snooze_button.get_style_context().add_class("break-snooze")
-        self.snooze_button.connect("clicked", on_snooze)
-
-        self.skip_button = Gtk.Button(label=_("Skip this break"))
-        self.skip_button.set_hexpand(True)
-        self.skip_button.set_no_show_all(True)
-        self.skip_button.get_style_context().add_class("break-skip")
-        self.skip_button.connect("clicked", on_skip)
-
-        self.break_actions.pack_start(self.snooze_button, True, True, 0)
-        self.break_actions.pack_start(self.skip_button, True, True, 0)
-
-        self.return_actions = Gtk.Box(
-            orientation=Gtk.Orientation.HORIZONTAL, spacing=8
-        )
-
-        self.return_button = Gtk.Button(
-            label=_("I'm back — start the work timer")
-        )
-        self.return_button.set_hexpand(True)
+        self.return_button = ui.pixel_button(_("I'm back"), "primary")
         self.return_button.set_no_show_all(True)
-        self.return_button.get_style_context().add_class("break-return")
         self.return_button.connect("clicked", on_return)
-
-        self.miss_button = Gtk.Button(label=_("I didn't take this break"))
-        self.miss_button.set_hexpand(True)
-        self.miss_button.set_no_show_all(True)
-        self.miss_button.get_style_context().add_class("break-skip")
-        self.miss_button.connect("clicked", on_miss)
-
-        self.return_actions.pack_start(self.return_button, True, True, 0)
-        self.return_actions.pack_start(self.miss_button, True, True, 0)
-
-        self.stand_button = Gtk.Button(label=_("I'm standing — keep counting"))
-        self.stand_button.set_hexpand(True)
+        self.stand_button = ui.pixel_button(
+            _("I'm standing — keep count"), "standing"
+        )
         self.stand_button.set_no_show_all(True)
-        self.stand_button.get_style_context().add_class("break-stand")
         self.stand_button.connect("clicked", on_stand)
+        self.first_row.pack_start(self.return_button, True, True, 0)
+        self.first_row.pack_start(self.stand_button, True, True, 0)
 
-        self.shortcuts = Gtk.Label()
-        self.shortcuts.set_xalign(0.0)
-        self.shortcuts.get_style_context().add_class("break-shortcuts")
+        self.burst = ui.Burst()
+        first_row_overlay = Gtk.Overlay()
+        first_row_overlay.set_margin_top(ap(6))
+        first_row_overlay.add(self.first_row)
+        first_row_overlay.add_overlay(self.burst)
+        first_row_overlay.set_overlay_pass_through(self.burst, True)
+        card.pack_start(first_row_overlay, False, False, 0)
 
-        self.scores = Gtk.Label()
-        self.scores.set_xalign(0.0)
-        self.scores.get_style_context().add_class("break-scores")
+        self.second_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=ap(2))
+        self.second_row.set_margin_top(ap(2))
+        self.snooze_button = ui.pixel_button(_("5 more min"))
+        self.snooze_button.set_no_show_all(True)
+        self.snooze_button.connect("clicked", on_snooze)
+        self.skip_button = ui.pixel_button(_("Skip it"))
+        self.skip_button.set_no_show_all(True)
+        self.skip_button.connect("clicked", on_skip)
+        self.miss_button = ui.pixel_button(_("Didn't take it"))
+        self.miss_button.set_no_show_all(True)
+        self.miss_button.connect("clicked", on_miss)
+        self.stand_small = ui.pixel_button(_("Still standing"), "standing")
+        self.stand_small.set_no_show_all(True)
+        self.stand_small.connect("clicked", on_stand)
+        for button in (
+            self.snooze_button,
+            self.skip_button,
+            self.miss_button,
+            self.stand_small,
+        ):
+            self.second_row.pack_start(button, True, True, 0)
+        card.pack_start(self.second_row, False, False, 0)
 
-        self.timeline = TimelineStrip()
-        self.timeline.set_no_show_all(True)
+        self.hint = ui.pixel_label("", "pixel-hint")
+        self.hint.set_margin_top(ap(3))
+        card.pack_start(self.hint, False, False, 0)
 
-        card.pack_start(self.eyebrow, False, False, 0)
-        card.pack_start(self.countdown, True, True, 0)
-        card.pack_start(self.away, False, False, 0)
-        card.pack_start(self.progress, False, False, 2)
-        card.pack_start(prompt, False, False, 0)
-        card.pack_start(self.break_actions, False, False, 0)
-        card.pack_start(self.return_actions, False, False, 0)
-        card.pack_start(self.stand_button, False, False, 0)
-        card.pack_start(self.timeline, False, False, 0)
-        card.pack_start(self.scores, False, False, 0)
-        card.pack_start(self.shortcuts, False, False, 0)
-        self.add(card)
+        card.pack_start(Gtk.Box(), True, True, 0)
+
+        self.track = ui.DayTrack()
+        self.track.set_no_show_all(True)
+        card.pack_start(self.track, False, False, 0)
+
+        verdict_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=ap(2))
+        verdict_row.set_margin_top(ap(2))
+        verdict_row.set_halign(Gtk.Align.CENTER)
+        self.mood = ui.Face(scale=2, sheet="face-bob")
+        self.scores = ui.pixel_label("", "pixel-secondary")
+        verdict_row.pack_start(self.mood, False, False, 0)
+        verdict_row.pack_start(self.scores, False, False, 0)
+        card.pack_start(verdict_row, False, False, 0)
+
+        self.wipe = ui.WipeOverlay()
+        overlay = Gtk.Overlay()
+        overlay.add(card)
+        overlay.add_overlay(self.wipe)
+        overlay.set_overlay_pass_through(self.wipe, True)
+        self.add(overlay)
+
+    # -- state ---------------------------------------------------------
 
     def set_break_seconds(self, break_seconds: int) -> None:
         self.break_seconds = break_seconds
@@ -893,23 +1007,30 @@ class BreakWindow(Gtk.ApplicationWindow):
     def set_warning_seconds(self, warning_seconds: int) -> None:
         self.warning_seconds = warning_seconds
 
-    def set_scores(self, text: str) -> None:
+    def set_scores(self, text: str, today_percent: Optional[int]) -> None:
         self.scores.set_text(text)
+        # The face is the verdict on the day: its disc carries the band.
+        self.mood.set_face(
+            "rest" if (today_percent or 0) >= 50 else "flat",
+            pixels.band_color(today_percent),
+        )
 
-    def set_timeline(self, points: Sequence[tuple[float, str]]) -> None:
-        self.timeline.set_points(points)
-        # A day without recorded outcomes shows no track at all rather
-        # than a bare line that reads as a divider.
-        self.timeline.set_visible(bool(points))
+    def set_timeline(
+        self, points: Sequence[tuple[float, str]], now: Optional[float] = None
+    ) -> None:
+        self.track.set_points(points, now)
+        # A day without recorded outcomes shows no track at all rather than
+        # a bare line that reads as a divider.
+        self.track.set_visible(bool(points))
 
     def set_snooze_seconds(self, snooze_seconds: int) -> None:
         self.snooze_button.set_label(
-            _("Give me %s") % duration_label(snooze_seconds)
+            _("%d more min") % short_minutes(snooze_seconds)
         )
 
     def set_work_seconds(self, work_seconds: int) -> None:
         self.return_button.set_label(
-            _("I'm back — start %s timer") % duration_label(work_seconds)
+            _("I'm back — start %d min") % short_minutes(work_seconds)
         )
 
     @staticmethod
@@ -932,12 +1053,11 @@ class BreakWindow(Gtk.ApplicationWindow):
         ):
             self.skip_button.clicked()
             return True
-        if self.stand_button.get_visible() and event.keyval in (
-            Gdk.KEY_t,
-            Gdk.KEY_T,
-        ):
-            self.stand_button.clicked()
-            return True
+        if event.keyval in (Gdk.KEY_t, Gdk.KEY_T):
+            for button in (self.stand_button, self.stand_small):
+                if button.get_visible():
+                    button.clicked()
+                    return True
         if self.return_button.get_visible() and event.keyval in (
             Gdk.KEY_Return,
             Gdk.KEY_KP_Enter,
@@ -952,55 +1072,129 @@ class BreakWindow(Gtk.ApplicationWindow):
     ) -> None:
         view = break_view(phase, seconds_remaining, away_seconds)
         self.set_title(view.title)
-        self.eyebrow.set_text(view.title.upper())
-        if phase is Phase.WORK:
-            # The warning countdown reddens as the break approaches.
-            self.countdown.set_markup(
-                '<span foreground="%s">%s</span>'
-                % (
-                    countdown_color(seconds_remaining, self.warning_seconds),
-                    GLib.markup_escape_text(view.countdown),
-                )
-            )
+        self.title.set_text(view.title)
+        context = self.title.get_style_context()
+        if view.title_color == PALETTE["mint"]:
+            context.add_class("pixel-title-done")
         else:
-            self.countdown.set_text(view.countdown)
-        self.away.set_text(view.away)
+            context.remove_class("pixel-title-done")
+        self.secondary.set_text(view.secondary)
+        self.prompt.set_text(view.prompt)
+        self._phase = phase
+        self._refresh_clock(seconds_remaining)
         total = self.warning_seconds if phase is Phase.WORK else self.break_seconds
-        self.progress.set_fraction(
-            break_progress_fraction(seconds_remaining, total)
-        )
+        self.progress.set_filled(pixels.filled_cells(seconds_remaining, total))
         self.snooze_button.set_visible(view.can_snooze)
         self.skip_button.set_visible(view.can_skip)
         self.return_button.set_visible(view.can_return)
         self.miss_button.set_visible(view.can_miss)
-        self.stand_button.set_visible(view.can_stand)
-        if view.can_return:
-            shortcuts = _("Enter to confirm")
-        elif view.can_snooze:
-            shortcuts = _("S to snooze · K to skip")
-        else:
-            shortcuts = ""
-        if view.can_stand:
-            standing = _("T if you're standing")
-            shortcuts = f"{shortcuts} · {standing}" if shortcuts else standing
-        self.shortcuts.set_text(shortcuts)
+        self.stand_button.set_visible(view.can_stand and not view.can_return)
+        self.stand_small.set_visible(view.can_stand and view.can_return)
+        self.hint.set_text(break_hint(view))
+
+    def _refresh_clock(self, seconds_remaining: int) -> None:
+        urgent = is_urgent(seconds_remaining) and self._phase is not Phase.AWAITING_RETURN
+        blink = True
+        shudder = 0
+        if ui.animations_enabled():
+            # The colon keeps a one-second heartbeat; the digits shudder one
+            # art pixel in the last ten seconds.
+            blink = (self._clock * self.TICK_MS) % 1000 < 500
+            if urgent:
+                period = shudder_period(seconds_remaining) or 120
+                frames = max(1, period // self.TICK_MS)
+                shudder = (self._clock // frames) % 2
+        self.countdown.set_time(
+            format_duration(seconds_remaining),
+            countdown_color(seconds_remaining, urgent),
+            blink,
+            shudder,
+        )
+
+    # -- motion --------------------------------------------------------
+
+    def start_clock(self) -> None:
+        if self._timer:
+            return
+        self._timer = GLib.timeout_add(self.TICK_MS, self._on_tick)
+
+    def stop_clock(self) -> None:
+        if self._timer:
+            GLib.source_remove(self._timer)
+            self._timer = 0
+
+    def _on_tick(self) -> bool:
+        self._clock += 1
+        return GLib.SOURCE_CONTINUE
+
+    def play_confirm(self, done) -> None:
+        """The mint burst over the button, then the card closes.
+
+        The score-line face is the 8 × 8 art, which has no grin frame, so it
+        marks the moment by turning mint rather than by changing expression.
+        """
+        self.mood.set_face("rest", PALETTE["mint"])
+        self.burst.play(done)
+
+    def play_missed(self, done) -> None:
+        """The one unpleasant motion: a coral ring and a shake."""
+        if not ui.animations_enabled():
+            self.set_ring(PALETTE["coral"])
+            GLib.timeout_add(400, lambda: (done(), GLib.SOURCE_REMOVE)[1])
+            return
+        frames = [PALETTE["coral"], PALETTE["edge"], PALETTE["coral"], PALETTE["edge"]]
+        x, y = self.get_position()
+
+        def step() -> bool:
+            self.set_ring(frames.pop(0))
+            self.move(x + (ART if len(frames) % 2 else -ART), y)
+            if frames:
+                return GLib.SOURCE_CONTINUE
+            self.move(x, y)
+            self.set_ring(PALETTE["edge"])
+            done()
+            return GLib.SOURCE_REMOVE
+
+        GLib.timeout_add(100, step)
+
+    def set_ring(self, color: str) -> None:
+        self._ring_color = color
+        self.queue_draw()
+
+    def _on_frame_draw(self, _widget, context) -> bool:
+        ui.paint_frame(
+            context,
+            self.get_allocated_width(),
+            self.get_allocated_height(),
+            ring=getattr(self, "_ring_color", PALETTE["edge"]),
+        )
+        return False
 
     def enforce_front(self) -> None:
         self.set_keep_above(True)
         self.deiconify()
         if self._wayland:
-            # Wayland ignores keep-above and explicit placement, so the break
-            # card claims the screen instead of being positioned over it.
+            # Wayland ignores keep-above and explicit placement, so the card
+            # claims the screen instead of being positioned over it.
             self.fullscreen()
         self.present()
+        self.start_clock()
+
+    def reveal(self) -> None:
+        """Open with the six-band wipe from the centre out."""
+        self.wipe.play()
 
 
-class StatsWindow(Gtk.Window):
-    """A closable statistics card in the visual language of the break card."""
+class StatsWindow(Gtk.Window, ui.PixelFrameWindow):
+    """The score screen: the week, the day, and twelve weeks of tiles."""
+
+    WIDTH = ap(152)
+    SCORE_SCALE = 3 * ART
 
     def __init__(self) -> None:
-        super().__init__(type=Gtk.WindowType.TOPLEVEL, title=_("Statistics"))
-        self.set_default_size(600, 700)
+        super().__init__(type=Gtk.WindowType.TOPLEVEL, title=_("Score"))
+        self.set_default_size(self.WIDTH, ap(210))
+        self.set_size_request(self.WIDTH, -1)
         self.set_resizable(False)
         self.set_decorated(False)
         self.set_position(Gtk.WindowPosition.CENTER)
@@ -1008,116 +1202,140 @@ class StatsWindow(Gtk.Window):
         self.set_skip_taskbar_hint(True)
         self.set_skip_pager_hint(True)
         self.set_type_hint(Gdk.WindowTypeHint.DIALOG)
-        self.get_style_context().add_class("break-window")
+        self.get_style_context().add_class("pixel-window")
+        self.setup_frame()
         self.connect("delete-event", self._on_delete)
         self.connect("key-press-event", self._on_key_press)
 
-        card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-        card.set_border_width(30)
-        card.get_style_context().add_class("break-card")
+        card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        card.set_border_width(ap(2) + ap(6))
 
-        eyebrow = Gtk.Label(label=_("Statistics").upper())
-        eyebrow.set_xalign(0.0)
-        eyebrow.get_style_context().add_class("break-eyebrow")
+        card.pack_start(ui.pixel_label(_("SCORE"), "pixel-window-title", 0.0), False, False, 0)
 
-        self.score_caption = Gtk.Label(label=_("This week"))
-        self.score_caption.set_xalign(0.0)
-        self.score_caption.get_style_context().add_class("stats-day-name")
+        caption = ui.pixel_label(_("THIS WEEK"), "pixel-caption", 0.0)
+        caption.set_margin_top(ap(6))
+        card.pack_start(caption, False, False, 0)
 
-        self.score = Gtk.Label(label="")
-        self.score.set_xalign(0.0)
-        self.score.get_style_context().add_class("stats-score")
+        score_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=ap(2))
+        score_row.set_margin_top(ap(2))
+        self.score = ui.SpriteDigits(scale=self.SCORE_SCALE, big=True)
+        self.score.set_halign(Gtk.Align.START)
+        self.percent = ui.PercentMark(self.SCORE_SCALE // 2)
+        self.face = ui.Face(scale=6)
+        self.face.set_halign(Gtk.Align.END)
+        score_row.pack_start(self.score, False, False, 0)
+        score_row.pack_start(self.percent, False, False, 0)
+        score_row.pack_end(self.face, False, False, 0)
+        card.pack_start(score_row, False, False, 0)
 
-        self.verdict = Gtk.Label(label="")
-        self.verdict.set_xalign(0.0)
-        self.verdict.set_line_wrap(True)
-        self.verdict.get_style_context().add_class("break-away")
+        self.verdict = ui.pixel_label("", "pixel-verdict", 0.0)
+        self.verdict.set_margin_top(ap(4))
+        card.pack_start(self.verdict, False, False, 0)
 
-        self.today_score = Gtk.Label(label="")
-        self.today_score.set_xalign(0.0)
-        self.today_score.get_style_context().add_class("break-scores")
+        self.today_score = ui.pixel_label("", "pixel-secondary", 0.0)
+        self.today_score.set_margin_top(ap(2))
+        card.pack_start(self.today_score, False, False, 0)
 
-        self.timeline = TimelineStrip(height=34, dot_radius=6.0)
-        self.timeline.set_no_show_all(True)
+        card.pack_start(self._rule(), False, False, 0)
+
+        today_caption = ui.pixel_label(_("TODAY"), "pixel-caption", 0.0)
+        card.pack_start(today_caption, False, False, 0)
+
+        self.track = ui.DayTrack(height_ap=8)
+        self.track.set_margin_top(ap(2))
+        card.pack_start(self.track, False, False, 0)
 
         hours = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
-        self.timeline_start = Gtk.Label(label="")
-        self.timeline_start.set_xalign(0.0)
-        self.timeline_start.set_hexpand(True)
-        self.timeline_start.get_style_context().add_class("stats-day-name")
-        self.timeline_end = Gtk.Label(label="")
-        self.timeline_end.set_xalign(1.0)
-        self.timeline_end.get_style_context().add_class("stats-day-name")
-        hours.pack_start(self.timeline_start, True, True, 0)
-        hours.pack_start(self.timeline_end, True, True, 0)
-        # The children are shown once here: show_all() is a no-op on a
-        # widget that carries no-show-all, so only the box is toggled.
-        self.timeline_start.show()
-        self.timeline_end.show()
-        hours.set_no_show_all(True)
-        self.timeline_hours = hours
+        hours.set_margin_top(ap(2))
+        self.track_start = ui.pixel_label("", "pixel-hint", 0.0)
+        self.track_start.set_hexpand(True)
+        self.track_end = ui.pixel_label("", "pixel-hint", 1.0)
+        hours.pack_start(self.track_start, True, True, 0)
+        hours.pack_start(self.track_end, False, False, 0)
+        card.pack_start(hours, False, False, 0)
 
-        legend = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=14)
+        legend = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=ap(4))
+        legend.set_margin_top(ap(4))
         for outcome, word in (
-            ("taken", _("taken")),
-            ("away", _("away")),
-            ("missed", _("missed")),
-            ("skipped", _("skipped")),
-            ("snoozed", _("snoozed")),
+            ("taken", _("TAKEN")),
+            ("away", _("AWAY")),
+            ("missed", _("MISSED")),
+            ("skipped", _("SKIPPED")),
+            ("snoozed", _("SNOOZED")),
         ):
-            entry = Gtk.Label()
-            entry.set_markup(
-                f'<span foreground="{TIMELINE_COLORS[outcome]}">●</span> {word}'
-            )
-            entry.get_style_context().add_class("stats-day-name")
-            entry.show()
+            entry = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=ART)
+            entry.pack_start(self._swatch(pixels.MARK_COLORS[outcome]), False, False, 0)
+            entry.pack_start(ui.pixel_label(word, "pixel-caption"), False, False, 0)
             legend.pack_start(entry, False, False, 0)
-        legend.set_no_show_all(True)
-        self.timeline_legend = legend
+        card.pack_start(legend, False, False, 0)
+
+        card.pack_start(self._rule(), False, False, 0)
+
+        weeks_caption = ui.pixel_label(_("TWELVE WEEKS"), "pixel-caption", 0.0)
+        card.pack_start(weeks_caption, False, False, 0)
 
         self.days_grid = HeatGrid()
+        self.days_grid.set_margin_top(ap(2))
+        card.pack_start(self.days_grid, False, False, 0)
 
-        scale = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
-        less = Gtk.Label(label=_("Less"))
-        less.get_style_context().add_class("stats-day-name")
-        scale.pack_start(less, False, False, 0)
-        for shade in HEAT_COLORS:
-            swatch = Gtk.Label()
-            swatch.set_markup(f'<span foreground="{shade}">■</span>')
-            scale.pack_start(swatch, False, False, 0)
-        more = Gtk.Label(label=_("More"))
-        more.get_style_context().add_class("stats-day-name")
-        scale.pack_start(more, False, False, 0)
-        self.heat_scale = scale
+        scale = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=ART)
+        scale.set_margin_top(ap(2))
+        scale.set_margin_start(ap(18))
+        scale.pack_start(ui.pixel_label(_("LESS"), "pixel-caption"), False, False, 0)
+        for level in range(len(pixels.HEAT_SHADES)):
+            scale.pack_start(self._swatch(pixels.heat_hex(level)), False, False, 0)
+        scale.pack_start(ui.pixel_label(_("MORE"), "pixel-caption"), False, False, 0)
+        card.pack_start(scale, False, False, 0)
 
-        self.today_line = Gtk.Label(label="")
-        self.today_line.set_xalign(0.0)
-        self.today_line.set_line_wrap(True)
-        self.today_line.get_style_context().add_class("break-prompt")
+        card.pack_start(self._rule(), False, False, 0)
 
-        self.week_line = Gtk.Label(label="")
-        self.week_line.set_xalign(0.0)
-        self.week_line.set_line_wrap(True)
-        self.week_line.get_style_context().add_class("break-prompt")
-
-        close_button = Gtk.Button(label=_("Close"))
-        close_button.get_style_context().add_class("break-return")
-        close_button.connect("clicked", lambda *_args: self.hide())
-
-        card.pack_start(eyebrow, False, False, 0)
-        card.pack_start(self.score_caption, False, False, 0)
-        card.pack_start(self.score, False, False, 0)
-        card.pack_start(self.verdict, False, False, 0)
-        card.pack_start(self.today_score, False, False, 0)
-        card.pack_start(self.timeline, False, False, 4)
-        card.pack_start(self.timeline_hours, False, False, 0)
-        card.pack_start(self.timeline_legend, False, False, 0)
-        card.pack_start(self.days_grid, False, False, 8)
-        card.pack_start(self.heat_scale, False, False, 0)
+        self.today_line = ui.pixel_label("", "pixel-prompt", 0.0)
         card.pack_start(self.today_line, False, False, 0)
+        self.week_line = ui.pixel_label("", "pixel-prompt", 0.0)
+        self.week_line.set_margin_top(ap(2))
         card.pack_start(self.week_line, False, False, 0)
-        card.pack_start(close_button, False, False, 6)
+
+        close_button = ui.pixel_button(_("Close"))
+        close_button.set_margin_top(ap(6))
+        close_button.connect("clicked", lambda *_args: self.hide())
+        card.pack_start(close_button, False, False, 0)
+
         self.add(card)
+
+    @staticmethod
+    def _swatch(color: str) -> Gtk.DrawingArea:
+        swatch = Gtk.DrawingArea()
+        swatch.set_size_request(ap(4), ap(4))
+        swatch.set_valign(Gtk.Align.CENTER)
+
+        def draw(area, context) -> bool:
+            context.set_source_rgb(*pixels.rgb(color))
+            context.rectangle(
+                0, 0, area.get_allocated_width(), area.get_allocated_height()
+            )
+            context.fill()
+            return False
+
+        swatch.connect("draw", draw)
+        return swatch
+
+    @staticmethod
+    def _rule() -> Gtk.DrawingArea:
+        rule = Gtk.DrawingArea()
+        rule.set_size_request(-1, ART)
+        rule.set_margin_top(ap(8))
+        rule.set_margin_bottom(ap(8))
+
+        def draw(area, context) -> bool:
+            context.set_source_rgb(*pixels.rgb(PALETTE["slate"]))
+            context.rectangle(
+                0, 0, area.get_allocated_width(), area.get_allocated_height()
+            )
+            context.fill()
+            return False
+
+        rule.connect("draw", draw)
+        return rule
 
     def _on_delete(self, *_args) -> bool:
         self.hide()
@@ -1133,38 +1351,244 @@ class StatsWindow(Gtk.Window):
         self,
         history: Sequence[tuple[str, DailyStats]],
         timeline: tuple[int, int, list[tuple[float, str]]],
+        now_minutes: int = 0,
     ) -> None:
         """Refresh from the history's day keys and stats, today last."""
+        self._now_minutes = now_minutes
         week = list(history[-WEEK_DAYS:])
         start_minutes, end_minutes, points = timeline
-        self.timeline.set_points(points)
-        self.timeline_start.set_text(
+        now = min(1.0, max(0.0, (self._now_minutes - start_minutes) / max(1, end_minutes - start_minutes)))
+        self.track.set_points(points, now)
+        self.track_start.set_text(
             f"{start_minutes // 60:02d}:{start_minutes % 60:02d}"
         )
-        self.timeline_end.set_text(
-            f"{end_minutes // 60:02d}:{end_minutes % 60:02d}"
-        )
-        # The whole timeline block appears only once the day has dots.
-        if points:
-            self.timeline.show()
-            self.timeline_hours.show()
-            self.timeline_legend.show()
-        else:
-            self.timeline.hide()
-            self.timeline_hours.hide()
-            self.timeline_legend.hide()
+        self.track_end.set_text(f"{end_minutes // 60:02d}:{end_minutes % 60:02d}")
         today_stats = week[-1][1] if week else DailyStats()
         week_total = aggregate_stats(stats for _day, stats in week)
         percent = adherence_percent(week_total)
-        self.score.set_text(score_headline(percent))
+        self._score_target = percent
+        self.score.set_text(
+            "" if percent is None else str(percent), pixels.band_color(percent)
+        )
+        self.percent.set_visible(percent is not None)
+        self.percent.set_color(pixels.band_color(percent))
+        self.face.set_face(
+            pixels.face_expression(percent), pixels.band_color(percent)
+        )
         self.verdict.set_text(rating_label(percent))
+        verdict_context = self.verdict.get_style_context()
+        for band in ("mint", "amber", "coral", "mist"):
+            verdict_context.remove_class(f"pixel-verdict-{band}")
+        verdict_context.add_class(
+            "pixel-verdict-%s"
+            % {
+                PALETTE["mint"]: "mint",
+                PALETTE["amber"]: "amber",
+                PALETTE["coral"]: "coral",
+                PALETTE["mist"]: "mist",
+            }[pixels.band_color(percent)]
+        )
         self.today_score.set_text(
-            _("Today: %s") % score_headline(adherence_percent(today_stats))
+            _("Today %s") % score_headline(adherence_percent(today_stats))
         )
         self.today_line.set_text(summary_label(today_stats))
         self.week_line.set_text(week_label(week_total))
-
         self.days_grid.set_history(history)
+
+    def play_open(self) -> None:
+        """Count the score up and paint the grid in, column by column."""
+        self.days_grid.play_fill()
+        target = getattr(self, "_score_target", None)
+        if target is not None and target >= 85:
+            self.face.play_grin()
+        if target is None or not ui.animations_enabled():
+            return
+        color = pixels.band_color(target)
+        steps = [round(target * step / 20) for step in range(1, 21)]
+
+        def step() -> bool:
+            self.score.set_text(str(steps.pop(0)), color)
+            return GLib.SOURCE_CONTINUE if steps else GLib.SOURCE_REMOVE
+
+        self.score.set_text("0", color)
+        GLib.timeout_add(25, step)
+
+
+class SettingsPanel(Gtk.Window, ui.PixelFrameWindow):
+    """The settings that are set once: durations, counting, away credit."""
+
+    WIDTH = ap(140)
+
+    def __init__(self, settings, on_change) -> None:
+        super().__init__(type=Gtk.WindowType.TOPLEVEL, title=_("Settings"))
+        self._on_change = on_change
+        self._segments: dict[str, list[tuple[Gtk.Button, int]]] = {}
+        self._checks: dict[str, tuple[Gtk.Button, Gtk.DrawingArea]] = {}
+        self._values: dict[str, bool] = {}
+        self.set_default_size(self.WIDTH, -1)
+        self.set_size_request(self.WIDTH, -1)
+        self.set_resizable(False)
+        self.set_decorated(False)
+        self.set_position(Gtk.WindowPosition.CENTER)
+        self.set_keep_above(True)
+        self.set_skip_taskbar_hint(True)
+        self.set_skip_pager_hint(True)
+        self.set_type_hint(Gdk.WindowTypeHint.DIALOG)
+        self.get_style_context().add_class("pixel-window")
+        self.setup_frame()
+        self.connect("delete-event", self._on_delete)
+        self.connect("key-press-event", self._on_key_press)
+
+        card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        card.set_border_width(ap(2) + ap(6))
+
+        card.pack_start(
+            ui.pixel_label(_("SETTINGS"), "pixel-window-title", 0.0), False, False, 0
+        )
+
+        card.pack_start(self._group(_("WORK INTERVAL")), False, False, 0)
+        card.pack_start(
+            self._segmented(
+                "work_seconds",
+                [(str(seconds // 60), seconds) for seconds in WORK_PRESETS],
+                settings.work_seconds,
+            ),
+            False,
+            False,
+            0,
+        )
+
+        card.pack_start(self._group(_("BREAK LENGTH")), False, False, 0)
+        card.pack_start(
+            self._segmented(
+                "break_seconds",
+                [(str(seconds // 60), seconds) for seconds in BREAK_PRESETS],
+                settings.break_seconds,
+            ),
+            False,
+            False,
+            0,
+        )
+
+        card.pack_start(self._group(_("COUNTING")), False, False, 0)
+        for key, label, value in (
+            (
+                "active_only",
+                _("Count only while I'm active"),
+                settings.mode is TimingMode.ACTIVE,
+            ),
+            (
+                "idle_reset_enabled",
+                _("Leaving the desk counts as a break"),
+                settings.idle_reset_enabled,
+            ),
+            ("sound_enabled", _("Play a sound at each break"), settings.sound_enabled),
+            (
+                "show_countdown",
+                _("Show the countdown in the top bar"),
+                settings.show_countdown,
+            ),
+        ):
+            card.pack_start(self._checkbox(key, label, value), False, False, 0)
+
+        card.pack_start(self._group(_("AWAY COUNTS AFTER")), False, False, 0)
+        card.pack_start(
+            self._segmented(
+                "idle_credit_seconds",
+                [
+                    (_("%d MIN") % (seconds // 60), seconds)
+                    for seconds in IDLE_CREDIT_PRESETS
+                ],
+                settings.idle_credit_seconds,
+            ),
+            False,
+            False,
+            0,
+        )
+
+        done = ui.pixel_button(_("Done"))
+        done.set_margin_top(ap(8))
+        done.connect("clicked", lambda *_args: self.hide())
+        card.pack_start(done, False, False, 0)
+
+        self.add(card)
+
+    @staticmethod
+    def _group(text: str) -> Gtk.Label:
+        label = ui.pixel_label(text, "pixel-caption", 0.0)
+        label.set_margin_top(ap(8))
+        label.set_margin_bottom(ap(2))
+        return label
+
+    def _segmented(self, key: str, choices, active) -> Gtk.Box:
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=ap(2))
+        row.set_homogeneous(True)
+        self._segments[key] = []
+        for label, value in choices:
+            button = Gtk.Button(label=label)
+            button.get_style_context().add_class("pixel-segment")
+            button.connect("clicked", self._segment_clicked, key, value)
+            row.pack_start(button, True, True, 0)
+            self._segments[key].append((button, value))
+        self._select(key, active)
+        return row
+
+    def _select(self, key: str, active) -> None:
+        for button, value in self._segments.get(key, []):
+            context = button.get_style_context()
+            if value == active:
+                context.add_class("pixel-segment-on")
+            else:
+                context.remove_class("pixel-segment-on")
+
+    def _segment_clicked(self, _button, key: str, value: int) -> None:
+        self._select(key, value)
+        self._on_change(key, value)
+
+    def _checkbox(self, key: str, label: str, value: bool) -> Gtk.Button:
+        button = Gtk.Button()
+        button.get_style_context().add_class("pixel-check")
+        button.set_relief(Gtk.ReliefStyle.NONE)
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=ap(2))
+        box = Gtk.DrawingArea()
+        box.set_size_request(6 * ART, 6 * ART)
+        box.set_valign(Gtk.Align.CENTER)
+        self._values[key] = bool(value)
+        box.connect(
+            "draw",
+            lambda area, context, key=key: ui.SPRITES.paint(
+                context,
+                "checkbox-on" if self._values[key] else "checkbox-off",
+                0,
+                0,
+                ART,
+                PALETTE["amber"] if self._values[key] else PALETTE["edge"],
+            ),
+        )
+        text = ui.pixel_label(label, "pixel-prompt", 0.0)
+        text.set_line_wrap(True)
+        row.pack_start(box, False, False, 0)
+        row.pack_start(text, False, False, 0)
+        button.add(row)
+        button.set_margin_top(ap(2))
+        button.connect("clicked", self._check_clicked, key)
+        self._checks[key] = (button, box)
+        return button
+
+    def _check_clicked(self, _button, key: str) -> None:
+        self._values[key] = not self._values[key]
+        self._checks[key][1].queue_draw()
+        self._on_change(key, self._values[key])
+
+    def _on_delete(self, *_args) -> bool:
+        self.hide()
+        return True
+
+    def _on_key_press(self, _window, event) -> bool:
+        if event.keyval == Gdk.KEY_Escape:
+            self.hide()
+            return True
+        return False
 
 
 class ReminderApplication(Gtk.Application):
@@ -1174,6 +1598,7 @@ class ReminderApplication(Gtk.Application):
         self.window: Optional[BreakWindow] = None
         self.stats_window: Optional[StatsWindow] = None
         self.pill: Optional[StandingPill] = None
+        self.settings_panel: Optional[SettingsPanel] = None
         self.settings = Settings()
         self.indicator = None
         self.stats = None
@@ -1200,6 +1625,7 @@ class ReminderApplication(Gtk.Application):
         self._stats_summary = ""
         self._score_day = ""
         self._indicator_label = None
+        self._indicator_icon = ICON_NAME
         self._idle_credit_pending = False
         self._standing_since: Optional[float] = None
         self._clock = time.monotonic
@@ -1328,24 +1754,23 @@ class ReminderApplication(Gtk.Application):
         self.indicator.set_title(APP_NAME)
         self.indicator.set_icon_full(ICON_NAME, APP_NAME)
 
+        # Seven flat rows: the shell draws this menu, so everything that can
+        # be styled has moved into the settings panel instead.
         menu = Gtk.Menu()
         self.status_item = Gtk.MenuItem(label=_("Next break in 30:00"))
         self.status_item.set_sensitive(False)
         menu.append(self.status_item)
 
-        self.stats_item = Gtk.MenuItem(label=_("No breaks yet today"))
+        self.stats_item = Gtk.MenuItem(label=_("Nothing recorded yet"))
         self.stats_item.set_sensitive(False)
         menu.append(self.stats_item)
-
-        stats_page_item = Gtk.MenuItem(label=_("Statistics"))
-        stats_page_item.connect("activate", self._open_stats_window)
-        menu.append(stats_page_item)
         menu.append(Gtk.SeparatorMenuItem())
 
-        self.start_item = Gtk.MenuItem(label=_("Start break now"))
+        self.start_item = Gtk.MenuItem(label=_("Start a break now"))
         self.start_item.connect("activate", self._start_break_now)
         menu.append(self.start_item)
-        self.reset_item = Gtk.MenuItem(label=_("I'm back — restart the work timer"))
+
+        self.reset_item = Gtk.MenuItem(label=_("I'm back — restart the timer"))
         self.reset_item.connect("activate", self._reset_work_interval)
         menu.append(self.reset_item)
 
@@ -1364,11 +1789,14 @@ class ReminderApplication(Gtk.Application):
         self.resume_item = Gtk.MenuItem(label=_("Resume reminders"))
         self.resume_item.connect("activate", self._resume_reminders)
         menu.append(self.resume_item)
-        menu.append(Gtk.SeparatorMenuItem())
 
-        menu.append(self._build_duration_item())
-        menu.append(self._build_timing_item())
-        menu.append(self._build_options_item())
+        score_item = Gtk.MenuItem(label=_("Score"))
+        score_item.connect("activate", self._open_stats_window)
+        menu.append(score_item)
+
+        settings_item = Gtk.MenuItem(label=_("Settings"))
+        settings_item.connect("activate", self._open_settings_panel)
+        menu.append(settings_item)
         menu.append(Gtk.SeparatorMenuItem())
 
         quit_item = Gtk.MenuItem(label=_("Quit"))
@@ -1377,99 +1805,35 @@ class ReminderApplication(Gtk.Application):
         menu.show_all()
         self.indicator.set_menu(menu)
 
-    def _build_duration_item(self) -> Gtk.MenuItem:
-        durations_item = Gtk.MenuItem(label=_("Durations"))
-        durations_menu = Gtk.Menu()
+    def _open_settings_panel(self, _item) -> None:
+        if self.settings_panel is None:
+            self.settings_panel = SettingsPanel(self.settings, self._panel_changed)
+        self.settings_panel.show_all()
+        self.settings_panel.present()
 
-        work_item = Gtk.MenuItem(label=_("Work interval"))
-        work_menu = Gtk.Menu()
-        group = None
-        for seconds in WORK_PRESETS:
-            entry = Gtk.RadioMenuItem.new_with_label_from_widget(
-                group, duration_label(seconds)
-            )
-            group = group or entry
-            entry.set_active(seconds == self.settings.work_seconds)
-            entry.connect("toggled", self._work_seconds_changed, seconds)
-            self.work_items[seconds] = entry
-            work_menu.append(entry)
-        work_item.set_submenu(work_menu)
-        durations_menu.append(work_item)
-
-        break_item = Gtk.MenuItem(label=_("Break length"))
-        break_menu = Gtk.Menu()
-        group = None
-        for seconds in BREAK_PRESETS:
-            entry = Gtk.RadioMenuItem.new_with_label_from_widget(
-                group, duration_label(seconds)
-            )
-            group = group or entry
-            entry.set_active(seconds == self.settings.break_seconds)
-            entry.connect("toggled", self._break_seconds_changed, seconds)
-            self.break_items[seconds] = entry
-            break_menu.append(entry)
-        break_item.set_submenu(break_menu)
-        durations_menu.append(break_item)
-
-        durations_item.set_submenu(durations_menu)
-        return durations_item
-
-    def _build_timing_item(self) -> Gtk.MenuItem:
-        timing_item = Gtk.MenuItem(label=_("Sleep and lock timing"))
-        timing_menu = Gtk.Menu()
-        self.active_item = Gtk.RadioMenuItem.new_with_label(
-            None, _("Active time only")
-        )
-        self.wall_item = Gtk.RadioMenuItem.new_with_label_from_widget(
-            self.active_item, _("Wall-clock time")
-        )
-        self.active_item.set_active(self.settings.mode is TimingMode.ACTIVE)
-        self.wall_item.set_active(self.settings.mode is TimingMode.WALL)
-        self.active_item.connect(
-            "toggled", self._timing_mode_changed, TimingMode.ACTIVE
-        )
-        self.wall_item.connect("toggled", self._timing_mode_changed, TimingMode.WALL)
-        timing_menu.append(self.active_item)
-        timing_menu.append(self.wall_item)
-        timing_item.set_submenu(timing_menu)
-        return timing_item
-
-    def _build_options_item(self) -> Gtk.MenuItem:
-        options_item = Gtk.MenuItem(label=_("Options"))
-        options_menu = Gtk.Menu()
-
-        self.countdown_item = Gtk.CheckMenuItem(label=_("Show countdown in top bar"))
-        self.countdown_item.set_active(self.settings.show_countdown)
-        self.countdown_item.connect("toggled", self._countdown_toggled)
-        options_menu.append(self.countdown_item)
-
-        self.idle_item = Gtk.CheckMenuItem(label=_("Count time away as a break"))
-        self.idle_item.set_active(self.settings.idle_reset_enabled)
-        self.idle_item.connect("toggled", self._idle_toggled)
-        options_menu.append(self.idle_item)
-
-        idle_credit_item = Gtk.MenuItem(label=_("Count away after"))
-        idle_credit_menu = Gtk.Menu()
-        group = None
-        for seconds in IDLE_CREDIT_PRESETS:
-            entry = Gtk.RadioMenuItem.new_with_label_from_widget(
-                group, duration_label(seconds)
-            )
-            group = group or entry
-            entry.set_active(seconds == self.settings.idle_credit_seconds)
-            entry.connect("toggled", self._idle_credit_seconds_changed, seconds)
-            self.idle_credit_items[seconds] = entry
-            idle_credit_menu.append(entry)
-        idle_credit_item.set_submenu(idle_credit_menu)
-        options_menu.append(idle_credit_item)
-
-        self.sound_item = Gtk.CheckMenuItem(label=_("Play a sound at each break"))
-        self.sound_item.set_active(self.settings.sound_enabled)
-        self.sound_item.connect("toggled", self._sound_toggled)
-        options_menu.append(self.sound_item)
-
-        options_item.set_submenu(options_menu)
-        return options_item
+    def _panel_changed(self, key: str, value) -> None:
+        """Apply one setting from the panel, saving as it changes."""
+        if key == "work_seconds":
+            self.scheduler.set_durations(work_seconds=value)
+            self.window.set_work_seconds(value)
+            self._save_settings(work_seconds=value)
+        elif key == "break_seconds":
+            self.scheduler.set_durations(break_seconds=value)
+            self.window.set_break_seconds(value)
+            self._save_settings(break_seconds=value)
+        elif key == "idle_credit_seconds":
+            self._save_settings(idle_credit_seconds=value)
+        elif key == "active_only":
+            mode = TimingMode.ACTIVE if value else TimingMode.WALL
+            self._apply_transition(self.scheduler.set_mode(mode))
+            self._save_settings(mode=mode)
+        elif key == "idle_reset_enabled":
+            self._save_settings(idle_reset_enabled=value)
+        elif key == "sound_enabled":
+            self._save_settings(sound_enabled=value)
+        elif key == "show_countdown":
+            self._save_settings(show_countdown=value)
+        self._update_interface()
 
     def _connect_lock_monitor(self) -> None:
         self._session_bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
@@ -1570,6 +1934,7 @@ class ReminderApplication(Gtk.Application):
             self._play_sound("complete")
         elif transition is Transition.END_BREAK and self.window:
             self.window.hide()
+            self.window.stop_clock()
             self._hide_dimmers()
 
     def _show_warning(self) -> None:
@@ -1586,6 +1951,7 @@ class ReminderApplication(Gtk.Application):
         )
         self.window.show_all()
         self.window.enforce_front()
+        self.window.reveal()
 
     def _play_sound(self, event_id: str) -> None:
         if not self.settings.sound_enabled or self._sound is None:
@@ -1607,6 +1973,7 @@ class ReminderApplication(Gtk.Application):
         )
         self.window.show_all()
         self.window.enforce_front()
+        self.window.reveal()
         # The break window has to be realized before GDK can report which
         # monitor it landed on.
         self._show_dimmers()
@@ -1671,6 +2038,11 @@ class ReminderApplication(Gtk.Application):
         if self._score_day != today:
             self._refresh_score_line()
 
+        icon = PAUSED_ICON_NAME if snapshot.phase is Phase.PAUSED else ICON_NAME
+        if icon != self._indicator_icon:
+            self._indicator_icon = icon
+            self.indicator.set_icon_full(icon, APP_NAME)
+
         label = indicator_label(
             snapshot.phase,
             snapshot.seconds_remaining,
@@ -1706,6 +2078,7 @@ class ReminderApplication(Gtk.Application):
                 )
             else:
                 self.window.hide()
+                self.window.stop_clock()
                 self._hide_dimmers()
 
         self._refresh_standing_pill()
@@ -1715,7 +2088,7 @@ class ReminderApplication(Gtk.Application):
             return
         self.stats.record(outcome)
         self._stats_day = today_key()
-        self._stats_summary = summary_label(self.stats.load(self._stats_day))
+        self._stats_summary = menu_summary(self.stats.load(self._stats_day))
         self._refresh_score_line()
         if self.stats_window and self.stats_window.get_visible():
             self._refresh_stats_window()
@@ -1728,6 +2101,11 @@ class ReminderApplication(Gtk.Application):
     def _today_timeline(self, day: str) -> tuple[int, int, list]:
         return timeline_layout(self.stats.load_events(day), self._now_minutes())
 
+    def _now_fraction(self, start_minutes: int, end_minutes: int) -> float:
+        """Where the present moment sits on the day track."""
+        span = max(1, end_minutes - start_minutes)
+        return min(1.0, max(0.0, (self._now_minutes() - start_minutes) / span))
+
     def _refresh_score_line(self) -> None:
         """Recompute the day and week adherence shown on the break window."""
         if self.stats is None or self.window is None:
@@ -1735,13 +2113,15 @@ class ReminderApplication(Gtk.Application):
         days = last_days(WEEK_DAYS)
         stats_list = self.stats.load_days(days)
         self._score_day = days[-1]
+        today_percent = adherence_percent(stats_list[-1])
         self.window.set_scores(
             score_line(
-                adherence_percent(stats_list[-1]),
-                adherence_percent(aggregate_stats(stats_list)),
-            )
+                today_percent, adherence_percent(aggregate_stats(stats_list))
+            ),
+            today_percent,
         )
-        self.window.set_timeline(self._today_timeline(days[-1])[2])
+        start, end, points = self._today_timeline(days[-1])
+        self.window.set_timeline(points, self._now_fraction(start, end))
 
     def _open_stats_window(self, _item) -> None:
         if self.stats_window is None:
@@ -1749,6 +2129,7 @@ class ReminderApplication(Gtk.Application):
         self._refresh_stats_window()
         self.stats_window.show_all()
         self.stats_window.present()
+        self.stats_window.play_open()
 
     def _refresh_stats_window(self) -> None:
         if self.stats_window is None or self.stats is None:
@@ -1757,6 +2138,7 @@ class ReminderApplication(Gtk.Application):
         self.stats_window.update_stats(
             list(zip(days, self.stats.load_days(days))),
             self._today_timeline(days[-1]),
+            self._now_minutes(),
         )
 
     def _stats_label(self, day: str) -> str:
@@ -1768,7 +2150,7 @@ class ReminderApplication(Gtk.Application):
         """
         if day != self._stats_day:
             self._stats_day = day
-            self._stats_summary = summary_label(self.stats.load(day))
+            self._stats_summary = menu_summary(self.stats.load(day))
         return self._stats_summary
 
     def _save_settings(self, **changes) -> None:
@@ -1789,6 +2171,11 @@ class ReminderApplication(Gtk.Application):
         transition = self.scheduler.confirm_return()
         if transition is Transition.END_BREAK:
             self._record_outcome(BreakOutcome.TAKEN)
+            # The burst plays over the button and the new mark writes onto
+            # the day track before the card goes.
+            self.window.play_confirm(lambda: self._close_card(transition))
+            self._update_interface()
+            return
         self._apply_transition(transition)
         self._update_interface()
 
@@ -1796,6 +2183,13 @@ class ReminderApplication(Gtk.Application):
         transition = self.scheduler.confirm_return()
         if transition is Transition.END_BREAK:
             self._record_outcome(BreakOutcome.MISSED)
+            self.window.play_missed(lambda: self._close_card(transition))
+            self._update_interface()
+            return
+        self._apply_transition(transition)
+        self._update_interface()
+
+    def _close_card(self, transition: Transition) -> None:
         self._apply_transition(transition)
         self._update_interface()
 
@@ -1864,45 +2258,6 @@ class ReminderApplication(Gtk.Application):
         self.scheduler.resume()
         self._update_interface()
 
-    def _work_seconds_changed(self, item, seconds: int) -> None:
-        if self._suppress_menu_events or not item.get_active():
-            return
-        self.scheduler.set_durations(work_seconds=seconds)
-        self.window.set_work_seconds(seconds)
-        self._save_settings(work_seconds=seconds)
-        self._update_interface()
-
-    def _break_seconds_changed(self, item, seconds: int) -> None:
-        if self._suppress_menu_events or not item.get_active():
-            return
-        self.scheduler.set_durations(break_seconds=seconds)
-        self.window.set_break_seconds(seconds)
-        self._save_settings(break_seconds=seconds)
-        self._update_interface()
-
-    def _countdown_toggled(self, item) -> None:
-        self._save_settings(show_countdown=item.get_active())
-        self._update_interface()
-
-    def _idle_toggled(self, item) -> None:
-        self._save_settings(idle_reset_enabled=item.get_active())
-
-    def _idle_credit_seconds_changed(self, item, seconds: int) -> None:
-        if self._suppress_menu_events or not item.get_active():
-            return
-        self._save_settings(idle_credit_seconds=seconds)
-
-    def _sound_toggled(self, item) -> None:
-        self._save_settings(sound_enabled=item.get_active())
-
-    def _timing_mode_changed(self, item, mode: TimingMode) -> None:
-        if self._suppress_menu_events or not item.get_active() or not self.scheduler:
-            return
-        transition = self.scheduler.set_mode(mode)
-        self._apply_transition(transition)
-        self._save_settings(mode=mode)
-        self._update_interface()
-
     def _quit_cleanly(self, _item) -> None:
         if self.indicator:
             self.indicator.set_status(AyatanaAppIndicator3.IndicatorStatus.PASSIVE)
@@ -1910,6 +2265,8 @@ class ReminderApplication(Gtk.Application):
             dimmer.destroy()
         if self.pill:
             self.pill.destroy()
+        if self.settings_panel:
+            self.settings_panel.destroy()
         if self.stats_window:
             self.stats_window.destroy()
         if self.window:

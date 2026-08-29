@@ -5,17 +5,15 @@ from unittest.mock import Mock
 from stand_up_reminder import application
 
 from stand_up_reminder.application import (
-    break_progress_fraction,
     duration_label,
     format_duration,
-    heat_cell_at,
-    heat_cell_size,
-    heat_grid_height,
-    hex_rgb,
     idle_credit_threshold,
     indicator_label,
     is_wayland_session,
+    menu_blocks,
+    short_minutes,
 )
+from stand_up_reminder.pixels import PALETTE
 from stand_up_reminder.scheduler import Phase, Transition
 from stand_up_reminder.stats import DailyStats
 
@@ -47,77 +45,8 @@ class DurationLabelTests(unittest.TestCase):
         self.assertEqual(duration_label(1), "1 second")
 
 
-class BreakProgressTests(unittest.TestCase):
-    def test_reports_fraction_of_break_remaining(self):
-        self.assertEqual(break_progress_fraction(120, 120), 1.0)
-        self.assertEqual(break_progress_fraction(30, 120), 0.25)
-        self.assertEqual(break_progress_fraction(0, 120), 0.0)
-
-    def test_clamps_values_and_handles_invalid_total(self):
-        self.assertEqual(break_progress_fraction(200, 120), 1.0)
-        self.assertEqual(break_progress_fraction(-1, 120), 0.0)
-        self.assertEqual(break_progress_fraction(10, 0), 0.0)
 
 
-class HeatGeometryTests(unittest.TestCase):
-    """The grid fills the width it is given, with square days."""
-
-    def test_cells_divide_the_width_left_after_labels_and_gaps(self):
-        cell = heat_cell_size(500, 12, gap=4, label_width=38)
-        self.assertAlmostEqual(cell, (500 - 38 - 11 * 4) / 12)
-
-    def test_a_narrow_or_empty_grid_never_goes_negative(self):
-        self.assertEqual(heat_cell_size(20, 12), 0.0)
-        self.assertEqual(heat_cell_size(500, 0), 0.0)
-
-    def test_height_follows_the_seven_weekday_rows(self):
-        self.assertEqual(
-            heat_grid_height(30, gap=4, month_height=18), 18 + 7 * 30 + 6 * 4
-        )
-
-    def test_a_point_maps_to_the_day_square_under_it(self):
-        # 12 columns of 30px squares, 4px apart, after a 38px label column.
-        geometry = dict(columns=12, cell=30, gap=4, label_width=38, month_height=18)
-        self.assertEqual(heat_cell_at(40, 20, **geometry), (0, 0))
-        self.assertEqual(heat_cell_at(38 + 34 + 5, 18 + 34 + 5, **geometry), (1, 1))
-
-    def test_labels_gaps_and_the_outside_map_to_nothing(self):
-        geometry = dict(columns=12, cell=30, gap=4, label_width=38, month_height=18)
-        self.assertIsNone(heat_cell_at(10, 40, **geometry))
-        self.assertIsNone(heat_cell_at(40, 5, **geometry))
-        self.assertIsNone(heat_cell_at(38 + 31, 20, **geometry))
-        self.assertIsNone(heat_cell_at(4000, 20, **geometry))
-        self.assertIsNone(heat_cell_at(40, 4000, **geometry))
-
-
-class CountdownColorTests(unittest.TestCase):
-    """The warning countdown starts white and turns red as it runs out."""
-
-    def test_starts_white_and_ends_red(self):
-        self.assertEqual(application.countdown_color(10, 10), "#f7f2e7")
-        self.assertEqual(application.countdown_color(0, 10), "#e05d5d")
-
-    def test_passes_through_the_two_colors_on_the_way(self):
-        middle = application.countdown_color(5, 10)
-        red, green, blue = application.hex_rgb(middle)
-        self.assertTrue(0xE0 / 255 < red < 0xF7 / 255)
-        self.assertTrue(0x5D / 255 < green < 0xF2 / 255)
-        self.assertTrue(0x5D / 255 < blue < 0xE7 / 255)
-
-    def test_clamps_beyond_the_warning_window(self):
-        self.assertEqual(application.countdown_color(40, 10), "#f7f2e7")
-        self.assertEqual(application.countdown_color(-5, 10), "#e05d5d")
-        self.assertEqual(application.countdown_color(5, 0), "#e05d5d")
-
-
-class HexRgbTests(unittest.TestCase):
-    def test_converts_hex_colors_to_unit_floats(self):
-        self.assertEqual(hex_rgb("#ff0000"), (1.0, 0.0, 0.0))
-        self.assertEqual(hex_rgb("#000000"), (0.0, 0.0, 0.0))
-        red, green, blue = hex_rgb("#7bc47f")
-        self.assertAlmostEqual(red, 0x7B / 255)
-        self.assertAlmostEqual(green, 0xC4 / 255)
-        self.assertAlmostEqual(blue, 0x7F / 255)
 
 
 class IdleCreditThresholdTests(unittest.TestCase):
@@ -165,27 +94,6 @@ class IndicatorLabelTests(unittest.TestCase):
         self.assertEqual(indicator_label(Phase.PAUSED, 0, True), "Paused")
 
 
-class FormatElapsedTests(unittest.TestCase):
-    def test_formats_minutes_and_seconds_below_an_hour(self):
-        self.assertEqual(application.format_elapsed(0), "00:00")
-        self.assertEqual(application.format_elapsed(75), "01:15")
-        self.assertEqual(application.format_elapsed(59 * 60 + 59), "59:59")
-
-    def test_adds_hours_past_the_hour(self):
-        self.assertEqual(application.format_elapsed(60 * 60), "1:00:00")
-        self.assertEqual(application.format_elapsed(3 * 60 * 60 + 61), "3:01:01")
-
-    def test_clamps_negative_values(self):
-        self.assertEqual(application.format_elapsed(-5), "00:00")
-
-
-class StandingLabelTests(unittest.TestCase):
-    def test_pairs_the_standing_icon_with_the_elapsed_time(self):
-        self.assertEqual(
-            application.standing_label(75),
-            f"{application.STANDING_ICON} 01:15",
-        )
-
 
 class PillPositionTests(unittest.TestCase):
     def test_places_the_pill_by_fraction_of_the_screen(self):
@@ -208,12 +116,53 @@ class PillPositionTests(unittest.TestCase):
         self.assertEqual(application.pill_fraction(10, 30, 40), 0.0)
 
 
+class CountdownStateTests(unittest.TestCase):
+    def test_the_clock_reddens_in_the_last_ten_seconds(self):
+        self.assertTrue(application.is_urgent(10))
+        self.assertFalse(application.is_urgent(11))
+        self.assertEqual(
+            application.countdown_color(10, True), PALETTE["coral"]
+        )
+        self.assertEqual(
+            application.countdown_color(30, False), PALETTE["bone"]
+        )
+
+    def test_the_shudder_tightens_under_five_seconds(self):
+        self.assertIsNone(application.shudder_period(11))
+        self.assertEqual(application.shudder_period(10), 120)
+        self.assertEqual(application.shudder_period(5), 80)
+
+
+class MenuBlockTests(unittest.TestCase):
+    def test_kept_breaks_are_filled_and_lost_ones_hollow(self):
+        self.assertEqual(
+            menu_blocks(DailyStats(taken=2, away=1, missed=1)), "▮▮▮▯"
+        )
+
+    def test_a_quiet_day_has_no_blocks(self):
+        self.assertEqual(menu_blocks(DailyStats()), "")
+
+    def test_a_long_day_is_scaled_to_the_cap(self):
+        blocks = menu_blocks(DailyStats(taken=9, missed=3), cap=8)
+        self.assertEqual(len(blocks), 8)
+        self.assertEqual(blocks.count("▮"), 6)
+
+
+class ShortMinutesTests(unittest.TestCase):
+    def test_rounds_to_whole_minutes_for_the_button_labels(self):
+        self.assertEqual(short_minutes(5 * 60), 5)
+        self.assertEqual(short_minutes(90), 2)
+
+    def test_never_reads_as_zero(self):
+        self.assertEqual(short_minutes(5), 1)
+
+
 class BreakViewTests(unittest.TestCase):
     def test_minimum_break_view(self):
         view = application.break_view(Phase.BREAK, 75, 45)
-        self.assertEqual(view.title, "Time to stand up")
+        self.assertEqual(view.title, "Up you get")
         self.assertEqual(view.countdown, "01:15")
-        self.assertEqual(view.away, "Away for 00:45")
+        self.assertEqual(view.secondary, "Up for 00:45")
         self.assertTrue(view.can_snooze)
         self.assertTrue(view.can_skip)
         self.assertFalse(view.can_return)
@@ -221,9 +170,10 @@ class BreakViewTests(unittest.TestCase):
 
     def test_awaiting_return_view(self):
         view = application.break_view(Phase.AWAITING_RETURN, 0, 15 * 60)
-        self.assertEqual(view.title, "Break complete")
+        self.assertEqual(view.title, "Nice one")
         self.assertEqual(view.countdown, "00:00")
-        self.assertEqual(view.away, "Away for 15:00")
+        self.assertEqual(view.secondary, "Up for 15:00")
+        self.assertEqual(view.title_color, PALETTE["mint"])
         self.assertFalse(view.can_snooze)
         self.assertFalse(view.can_skip)
         self.assertTrue(view.can_return)
@@ -238,7 +188,7 @@ class BreakViewTests(unittest.TestCase):
         view = application.break_view(Phase.WORK, 15, 0)
         self.assertEqual(view.title, "Break coming up")
         self.assertEqual(view.countdown, "00:15")
-        self.assertEqual(view.away, "Time to stand up in 00:15")
+        self.assertEqual(view.secondary, "Standing up in 00:15")
         self.assertFalse(view.can_return)
         self.assertFalse(view.can_stand)
         self.assertFalse(view.can_miss)
@@ -255,6 +205,20 @@ class BreakViewTests(unittest.TestCase):
         self.assertFalse(view.can_return)
         self.assertFalse(view.can_miss)
         self.assertFalse(view.can_stand)
+
+
+class BreakHintTests(unittest.TestCase):
+    def test_the_break_names_all_three_keys(self):
+        view = application.break_view(Phase.BREAK, 75, 45)
+        self.assertEqual(application.break_hint(view), "S SNOOZE · K SKIP · T STANDING")
+
+    def test_the_warning_has_no_standing_key(self):
+        view = application.break_view(Phase.WORK, 15, 0)
+        self.assertEqual(application.break_hint(view), "S SNOOZE · K SKIP")
+
+    def test_a_finished_break_confirms_or_stands(self):
+        view = application.break_view(Phase.AWAITING_RETURN, 0, 90)
+        self.assertEqual(application.break_hint(view), "ENTER · T STANDING")
 
 
 class IndicatorViewTests(unittest.TestCase):
@@ -282,7 +246,7 @@ class IndicatorViewTests(unittest.TestCase):
 
     def test_awaiting_return_view(self):
         view = application.indicator_view(Phase.AWAITING_RETURN, 0, 15 * 60)
-        self.assertEqual(view.status, "Away for 15:00")
+        self.assertEqual(view.status, "Up for 15:00")
         self.assertFalse(view.can_start_break)
         self.assertTrue(view.can_reset_work)
         self.assertFalse(view.can_pause)
@@ -332,7 +296,7 @@ class StatsSummaryCacheTests(unittest.TestCase):
         )
 
         coordinator.stats.load.assert_called_once_with("2026-07-21")
-        self.assertEqual(label, "No breaks yet today")
+        self.assertEqual(label, "Nothing recorded yet")
         self.assertEqual(coordinator._stats_day, "2026-07-21")
 
     def test_recording_an_outcome_refreshes_the_summary(self):
@@ -345,7 +309,7 @@ class StatsSummaryCacheTests(unittest.TestCase):
         coordinator.stats.record.assert_called_once_with(
             application.BreakOutcome.TAKEN
         )
-        self.assertEqual(coordinator._stats_summary, "Today: 3 breaks taken")
+        self.assertEqual(coordinator._stats_summary, "▮▮▮  3 taken")
 
     def test_a_missing_stats_store_is_tolerated(self):
         coordinator = SimpleNamespace(

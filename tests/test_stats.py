@@ -26,15 +26,15 @@ from stand_up_reminder.stats import (
 
 class SummaryLabelTests(unittest.TestCase):
     def test_reports_a_quiet_day(self):
-        self.assertEqual(summary_label(DailyStats()), "No breaks yet today")
+        self.assertEqual(summary_label(DailyStats()), "Nothing recorded yet")
 
     def test_reports_only_the_outcomes_that_happened(self):
         self.assertEqual(
-            summary_label(DailyStats(taken=1)), "Today: 1 break taken"
+            summary_label(DailyStats(taken=1)), "Today  1 taken"
         )
         self.assertEqual(
             summary_label(DailyStats(taken=4, skipped=2)),
-            "Today: 4 breaks taken, 2 skipped",
+            "Today  4 taken · 2 skipped",
         )
 
     def test_reports_every_outcome(self):
@@ -42,24 +42,24 @@ class SummaryLabelTests(unittest.TestCase):
             summary_label(
                 DailyStats(taken=3, away=2, missed=4, skipped=1, snoozed=5)
             ),
-            "Today: 3 breaks taken, 2 away, 4 missed, 1 skipped, 5 snoozed",
+            "Today  3 taken · 2 away · 4 missed · 1 skipped · 5 snoozed",
         )
 
     def test_reports_a_day_with_only_missed_breaks(self):
-        self.assertEqual(summary_label(DailyStats(missed=2)), "Today: 2 missed")
+        self.assertEqual(summary_label(DailyStats(missed=2)), "Today  2 missed")
 
     def test_reports_a_day_with_only_away_credits(self):
-        self.assertEqual(summary_label(DailyStats(away=4)), "Today: 4 away")
+        self.assertEqual(summary_label(DailyStats(away=4)), "Today  4 away")
 
 
 class WeekLabelTests(unittest.TestCase):
     def test_reports_a_quiet_week(self):
-        self.assertEqual(week_label(DailyStats()), "No breaks this week")
+        self.assertEqual(week_label(DailyStats()), "Nothing recorded this week")
 
     def test_reports_the_week_outcomes(self):
         self.assertEqual(
             week_label(DailyStats(taken=12, missed=3)),
-            "This week: 12 breaks taken, 3 missed",
+            "Week  12 taken · 3 missed",
         )
 
 
@@ -117,20 +117,20 @@ class AdherenceTests(unittest.TestCase):
 
 class RatingLabelTests(unittest.TestCase):
     def test_rates_each_tier(self):
-        self.assertEqual(rating_label(None), "No breaks due yet")
-        self.assertEqual(rating_label(100), "Excellent — you rarely miss a break")
-        self.assertEqual(rating_label(90), "Excellent — you rarely miss a break")
-        self.assertEqual(rating_label(70), "Good — most breaks taken")
-        self.assertEqual(rating_label(40), "Could be better — many breaks slip by")
-        self.assertEqual(rating_label(39), "Time to stand up more often")
+        self.assertEqual(rating_label(None), "Nothing due yet today.")
+        self.assertEqual(rating_label(100), "Great week. You barely miss one.")
+        self.assertEqual(rating_label(85), "Great week. You barely miss one.")
+        self.assertEqual(rating_label(70), "Good week. Most breaks taken.")
+        self.assertEqual(rating_label(50), "Half of them slipped by.")
+        self.assertEqual(rating_label(49), "Let's get more of these.")
 
 
 class ScoreHeadlineTests(unittest.TestCase):
     def test_pairs_the_percentage_with_its_mood(self):
-        self.assertEqual(score_headline(95), "95% 😄")
-        self.assertEqual(score_headline(70), "70% 🙂")
-        self.assertEqual(score_headline(40), "40% 😐")
-        self.assertEqual(score_headline(5), "5% 😟")
+        self.assertEqual(score_headline(95), "95%")
+        self.assertEqual(score_headline(70), "70%")
+        self.assertEqual(score_headline(40), "40%")
+        self.assertEqual(score_headline(5), "5%")
 
     def test_shows_a_dash_when_no_breaks_were_due(self):
         self.assertEqual(score_headline(None), "—")
@@ -139,15 +139,15 @@ class ScoreHeadlineTests(unittest.TestCase):
 class ScoreLineTests(unittest.TestCase):
     def test_shows_both_scores_with_their_mood(self):
         self.assertEqual(
-            score_line(75, 92), "Today: 75% 🙂 · This week: 92% 😄"
+            score_line(75, 92), "Today 75% · Week 92%"
         )
         self.assertEqual(
-            score_line(40, 20), "Today: 40% 😐 · This week: 20% 😟"
+            score_line(40, 20), "Today 40% · Week 20%"
         )
 
     def test_shows_a_dash_when_no_breaks_were_due(self):
-        self.assertEqual(score_line(None, None), "Today: — · This week: —")
-        self.assertEqual(score_line(None, 100), "Today: — · This week: 100% 😄")
+        self.assertEqual(score_line(None, None), "Today — · Week —")
+        self.assertEqual(score_line(None, 100), "Today — · Week 100%")
 
 
 class HeatLevelTests(unittest.TestCase):
@@ -166,12 +166,12 @@ class DayTooltipTests(unittest.TestCase):
     def test_names_the_day_with_its_counts_and_score(self):
         self.assertEqual(
             day_tooltip("2026-07-31", DailyStats(taken=9, missed=1)),
-            "Fri 31 Jul · 9 breaks taken, 1 missed · 90% 😄",
+            "FRI 31 JUL\n9 taken · 1 missed",
         )
 
     def test_reports_a_day_without_breaks(self):
         self.assertEqual(
-            day_tooltip("2026-07-26", DailyStats()), "Sun 26 Jul · No breaks · —"
+            day_tooltip("2026-07-26", DailyStats()), "SUN 26 JUL\nNothing recorded"
         )
 
 

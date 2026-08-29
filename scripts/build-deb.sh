@@ -24,10 +24,21 @@ install -d "$staging/usr/share/doc/$package_name"
 install -d "$staging/usr/share/icons/hicolor/scalable/apps"
 install -d "$staging/usr/share/icons/hicolor/scalable/status"
 install -d "$staging/etc/xdg/autostart"
+install -d "$staging/usr/lib/$package_name/sprites"
+install -d "$staging/usr/share/fonts/truetype/$package_name"
 
 for module in stand_up_reminder/*.py; do
     install -m 0644 "$module" "$staging/usr/lib/$package_name/stand_up_reminder/"
 done
+
+for sprite in data/sprites/*.png; do
+    install -m 0644 "$sprite" "$staging/usr/lib/$package_name/sprites/"
+done
+for font in data/fonts/*.ttf; do
+    install -m 0644 "$font" "$staging/usr/share/fonts/truetype/$package_name/"
+done
+install -m 0644 data/fonts/OFL.txt \
+    "$staging/usr/share/fonts/truetype/$package_name/"
 
 if command -v msgfmt >/dev/null 2>&1; then
     for catalogue in po/*.po; do
@@ -57,6 +68,10 @@ install -m 0644 data/stand-up-reminder.desktop \
     "$staging/usr/share/applications/$app_id.desktop"
 install -m 0644 data/stand-up-reminder-autostart.desktop \
     "$staging/etc/xdg/autostart/$package_name.desktop"
+install -m 0644 data/stand-up-reminder-paused-symbolic.svg \
+    "$staging/usr/share/icons/hicolor/scalable/apps/stand-up-reminder-paused-symbolic.svg"
+install -m 0644 data/stand-up-reminder-paused-symbolic.svg \
+    "$staging/usr/share/icons/hicolor/scalable/status/stand-up-reminder-paused-symbolic.svg"
 install -m 0644 data/stand-up-reminder-symbolic.svg \
     "$staging/usr/share/icons/hicolor/scalable/apps/stand-up-reminder-symbolic.svg"
 install -m 0644 data/stand-up-reminder-symbolic.svg \
