@@ -14,6 +14,8 @@ DEFAULT_BREAK_SECONDS = 2 * 60
 DEFAULT_SNOOZE_SECONDS = 5 * 60
 DEFAULT_WARNING_SECONDS = 15
 DEFAULT_IDLE_CREDIT_SECONDS = 10 * 60
+# Where the standing pill sits, as a fraction of the screen height.
+DEFAULT_STANDING_PILL_POSITION = 0.5
 
 WORK_SECONDS_RANGE = (60, 4 * 60 * 60)
 BREAK_SECONDS_RANGE = (15, 60 * 60)
@@ -37,6 +39,7 @@ class Settings:
     idle_reset_enabled: bool = True
     show_countdown: bool = True
     sound_enabled: bool = False
+    standing_pill_position: float = DEFAULT_STANDING_PILL_POSITION
 
 
 def _clamp(value: int, bounds: tuple[int, int]) -> int:
@@ -54,6 +57,13 @@ def _read_duration(payload: dict, key: str, bounds: tuple[int, int], default: in
 def _read_flag(payload: dict, key: str, default: bool) -> bool:
     raw = payload.get(key, default)
     return raw if isinstance(raw, bool) else default
+
+
+def _read_fraction(payload: dict, key: str, default: float) -> float:
+    raw = payload.get(key, default)
+    if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+        return default
+    return max(0.0, min(1.0, float(raw)))
 
 
 def _read_mode(payload: dict) -> TimingMode:
@@ -95,6 +105,9 @@ def settings_from_payload(payload: dict) -> Settings:
         idle_reset_enabled=_read_flag(payload, "idle_reset_enabled", True),
         show_countdown=_read_flag(payload, "show_countdown", True),
         sound_enabled=_read_flag(payload, "sound_enabled", False),
+        standing_pill_position=_read_fraction(
+            payload, "standing_pill_position", DEFAULT_STANDING_PILL_POSITION
+        ),
     )
 
 

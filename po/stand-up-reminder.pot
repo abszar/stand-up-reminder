@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Stand Up Reminder 1.2.0\n"
 "Report-Msgid-Bugs-To: https://github.com/abszar/stand-up-reminder/issues\n"
-"POT-Creation-Date: 2026-07-31 23:17+0200\n"
+"POT-Creation-Date: 2026-08-29 19:27+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE\n"
@@ -89,6 +89,18 @@ msgid "Paused"
 msgstr ""
 
 #: stand_up_reminder/application.py
+msgid "Standing"
+msgstr ""
+
+#: stand_up_reminder/application.py
+msgid "Standing since your last break"
+msgstr ""
+
+#: stand_up_reminder/application.py
+msgid "I'm sitting down — stop this timer"
+msgstr ""
+
+#: stand_up_reminder/application.py
 msgid "Stand tall. Let your shoulders drop. Take a few steps."
 msgstr ""
 
@@ -109,6 +121,10 @@ msgid "I didn't take this break"
 msgstr ""
 
 #: stand_up_reminder/application.py
+msgid "I'm standing — keep counting"
+msgstr ""
+
+#: stand_up_reminder/application.py
 #, python-format
 msgid "Give me %s"
 msgstr ""
@@ -124,6 +140,10 @@ msgstr ""
 
 #: stand_up_reminder/application.py
 msgid "S to snooze · K to skip"
+msgstr ""
+
+#: stand_up_reminder/application.py
+msgid "T if you're standing"
 msgstr ""
 
 #: stand_up_reminder/application.py

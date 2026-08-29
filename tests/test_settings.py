@@ -26,6 +26,7 @@ class SettingsDefaultsTests(unittest.TestCase):
         self.assertTrue(settings.idle_reset_enabled)
         self.assertTrue(settings.show_countdown)
         self.assertFalse(settings.sound_enabled)
+        self.assertEqual(settings.standing_pill_position, 0.5)
 
 
 class SettingsStoreTests(unittest.TestCase):
@@ -70,6 +71,7 @@ class SettingsStoreTests(unittest.TestCase):
             idle_reset_enabled=False,
             show_countdown=False,
             sound_enabled=True,
+            standing_pill_position=0.2,
         )
         self.store.save(saved)
         self.assertEqual(self.store.load(), saved)
@@ -114,6 +116,19 @@ class SettingsStoreTests(unittest.TestCase):
         settings = self.store.load()
         self.assertFalse(settings.sound_enabled)
         self.assertTrue(settings.show_countdown)
+
+    def test_standing_pill_position_is_clamped_to_the_screen(self):
+        self.write({"standing_pill_position": 1.8})
+        self.assertEqual(self.store.load().standing_pill_position, 1.0)
+        self.write({"standing_pill_position": -0.4})
+        self.assertEqual(self.store.load().standing_pill_position, 0.0)
+
+    def test_non_numeric_standing_pill_position_falls_back_to_the_default(self):
+        self.write({"standing_pill_position": "top"})
+        self.assertEqual(
+            self.store.load().standing_pill_position,
+            Settings().standing_pill_position,
+        )
 
     def test_corrupt_field_does_not_discard_valid_fields(self):
         self.write({"timing_mode": "wall", "work_seconds": "bogus"})

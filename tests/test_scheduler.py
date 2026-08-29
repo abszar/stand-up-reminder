@@ -487,5 +487,40 @@ class IdleCreditTests(SchedulerFixture):
         self.assertEqual(self.scheduler.snapshot().phase, Phase.PAUSED)
 
 
+class StandUpTests(SchedulerFixture):
+    def test_standing_during_a_break_starts_a_fresh_work_interval(self):
+        self.scheduler.start_break()
+        self.clocks.advance(1)
+
+        self.assertEqual(self.scheduler.stand_up(), Transition.END_BREAK)
+
+        snapshot = self.scheduler.snapshot()
+        self.assertEqual(snapshot.phase, Phase.WORK)
+        self.assertEqual(snapshot.seconds_remaining, 30)
+
+    def test_standing_after_the_break_completed_starts_a_fresh_work_interval(self):
+        self.scheduler.start_break()
+        self.clocks.advance(2)
+        self.scheduler.advance()
+
+        self.assertEqual(self.scheduler.stand_up(), Transition.END_BREAK)
+        self.assertEqual(self.scheduler.snapshot().phase, Phase.WORK)
+
+    def test_standing_outside_a_break_changes_nothing(self):
+        self.clocks.advance(20)
+
+        self.assertIsNone(self.scheduler.stand_up())
+
+        snapshot = self.scheduler.snapshot()
+        self.assertEqual(snapshot.phase, Phase.WORK)
+        self.assertEqual(snapshot.seconds_remaining, 10)
+
+    def test_standing_does_not_resume_a_paused_timer(self):
+        self.scheduler.pause()
+
+        self.assertIsNone(self.scheduler.stand_up())
+        self.assertEqual(self.scheduler.snapshot().phase, Phase.PAUSED)
+
+
 if __name__ == "__main__":
     unittest.main()

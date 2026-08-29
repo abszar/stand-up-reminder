@@ -177,6 +177,19 @@ class Scheduler:
         self._begin_work()
         return Transition.END_BREAK
 
+    def stand_up(self) -> Optional[Transition]:
+        """Take the break standing: end it now and start working again.
+
+        A standing desk turns the break into a change of posture rather than
+        a pause, so the break ends the moment the user stands and a fresh
+        work interval begins under them.
+        """
+        self.advance()
+        if self.phase not in (Phase.BREAK, Phase.AWAITING_RETURN):
+            return None
+        self._begin_work()
+        return Transition.END_BREAK
+
     def reset_work_interval(self) -> bool:
         self.advance()
         if self.phase in (Phase.SNOOZED, Phase.BREAK, Phase.PAUSED):

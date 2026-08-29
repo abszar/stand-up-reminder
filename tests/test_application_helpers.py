@@ -16,7 +16,7 @@ from stand_up_reminder.application import (
     indicator_label,
     is_wayland_session,
 )
-from stand_up_reminder.scheduler import Phase
+from stand_up_reminder.scheduler import Phase, Transition
 from stand_up_reminder.stats import DailyStats
 
 
@@ -165,6 +165,49 @@ class IndicatorLabelTests(unittest.TestCase):
         self.assertEqual(indicator_label(Phase.PAUSED, 0, True), "Paused")
 
 
+class FormatElapsedTests(unittest.TestCase):
+    def test_formats_minutes_and_seconds_below_an_hour(self):
+        self.assertEqual(application.format_elapsed(0), "00:00")
+        self.assertEqual(application.format_elapsed(75), "01:15")
+        self.assertEqual(application.format_elapsed(59 * 60 + 59), "59:59")
+
+    def test_adds_hours_past_the_hour(self):
+        self.assertEqual(application.format_elapsed(60 * 60), "1:00:00")
+        self.assertEqual(application.format_elapsed(3 * 60 * 60 + 61), "3:01:01")
+
+    def test_clamps_negative_values(self):
+        self.assertEqual(application.format_elapsed(-5), "00:00")
+
+
+class StandingLabelTests(unittest.TestCase):
+    def test_pairs_the_standing_icon_with_the_elapsed_time(self):
+        self.assertEqual(
+            application.standing_label(75),
+            f"{application.STANDING_ICON} 01:15",
+        )
+
+
+class PillPositionTests(unittest.TestCase):
+    def test_places_the_pill_by_fraction_of_the_screen(self):
+        self.assertEqual(application.pill_position(0.5, 1000, 40), 480)
+        self.assertEqual(application.pill_position(0.0, 1000, 40), 0)
+
+    def test_keeps_the_whole_pill_on_screen(self):
+        self.assertEqual(application.pill_position(1.0, 1000, 40), 960)
+        self.assertEqual(application.pill_position(-1.0, 1000, 40), 0)
+
+    def test_a_pill_taller_than_the_screen_starts_at_the_top(self):
+        self.assertEqual(application.pill_position(0.8, 30, 40), 0)
+
+    def test_fraction_round_trips_through_a_position(self):
+        self.assertAlmostEqual(application.pill_fraction(480, 1000, 40), 0.5)
+        self.assertEqual(application.pill_fraction(-20, 1000, 40), 0.0)
+        self.assertEqual(application.pill_fraction(5_000, 1000, 40), 1.0)
+
+    def test_fraction_of_a_screen_shorter_than_the_pill_is_the_top(self):
+        self.assertEqual(application.pill_fraction(10, 30, 40), 0.0)
+
+
 class BreakViewTests(unittest.TestCase):
     def test_minimum_break_view(self):
         view = application.break_view(Phase.BREAK, 75, 45)
@@ -174,6 +217,7 @@ class BreakViewTests(unittest.TestCase):
         self.assertTrue(view.can_snooze)
         self.assertTrue(view.can_skip)
         self.assertFalse(view.can_return)
+        self.assertTrue(view.can_stand)
 
     def test_awaiting_return_view(self):
         view = application.break_view(Phase.AWAITING_RETURN, 0, 15 * 60)
@@ -183,6 +227,7 @@ class BreakViewTests(unittest.TestCase):
         self.assertFalse(view.can_snooze)
         self.assertFalse(view.can_skip)
         self.assertTrue(view.can_return)
+        self.assertTrue(view.can_stand)
         self.assertTrue(view.can_miss)
 
     def test_active_break_cannot_be_declared_missed(self):
@@ -195,6 +240,7 @@ class BreakViewTests(unittest.TestCase):
         self.assertEqual(view.countdown, "00:15")
         self.assertEqual(view.away, "Time to stand up in 00:15")
         self.assertFalse(view.can_return)
+        self.assertFalse(view.can_stand)
         self.assertFalse(view.can_miss)
 
     def test_the_warning_offers_the_same_break_actions(self):
@@ -208,6 +254,7 @@ class BreakViewTests(unittest.TestCase):
         self.assertFalse(view.can_skip)
         self.assertFalse(view.can_return)
         self.assertFalse(view.can_miss)
+        self.assertFalse(view.can_stand)
 
 
 class IndicatorViewTests(unittest.TestCase):
@@ -382,6 +429,71 @@ class BreakActionCoordinatorTests(unittest.TestCase):
         application.ReminderApplication._skip_break(coordinator, None)
 
         coordinator._record_outcome.assert_not_called()
+
+
+class StandingCoordinatorTests(unittest.TestCase):
+    def make_coordinator(self):
+        return SimpleNamespace(
+            scheduler=Mock(),
+            window=Mock(),
+            stats=Mock(),
+            pill=Mock(),
+            _standing_since=None,
+            _update_interface=Mock(),
+            _record_outcome=Mock(),
+            _apply_transition=Mock(),
+            _start_standing=Mock(),
+        )
+
+    def test_standing_counts_the_break_as_taken_and_opens_the_pill(self):
+        coordinator = self.make_coordinator()
+        coordinator.scheduler.stand_up.return_value = Transition.END_BREAK
+
+        application.ReminderApplication._stand_up(coordinator, None)
+
+        coordinator._record_outcome.assert_called_once_with(
+            application.BreakOutcome.TAKEN
+        )
+        coordinator._apply_transition.assert_called_once_with(Transition.END_BREAK)
+        coordinator._start_standing.assert_called_once_with()
+        coordinator._update_interface.assert_called_once_with()
+
+    def test_standing_outside_a_break_changes_nothing(self):
+        coordinator = self.make_coordinator()
+        coordinator.scheduler.stand_up.return_value = None
+
+        application.ReminderApplication._stand_up(coordinator, None)
+
+        coordinator._record_outcome.assert_not_called()
+        coordinator._start_standing.assert_not_called()
+        coordinator._update_interface.assert_called_once_with()
+
+    def test_sitting_down_hides_the_pill_and_forgets_the_start(self):
+        coordinator = self.make_coordinator()
+        coordinator._standing_since = 100.0
+
+        application.ReminderApplication._stop_standing(coordinator)
+
+        coordinator.pill.hide.assert_called_once_with()
+        self.assertIsNone(coordinator._standing_since)
+
+    def test_the_pill_shows_the_time_since_standing_began(self):
+        coordinator = SimpleNamespace(
+            pill=Mock(), _standing_since=100.0, _clock=lambda: 175.4
+        )
+
+        application.ReminderApplication._refresh_standing_pill(coordinator)
+
+        coordinator.pill.set_seconds.assert_called_once_with(75)
+
+    def test_the_pill_is_left_alone_while_nobody_is_standing(self):
+        coordinator = SimpleNamespace(
+            pill=Mock(), _standing_since=None, _clock=lambda: 175.4
+        )
+
+        application.ReminderApplication._refresh_standing_pill(coordinator)
+
+        coordinator.pill.set_seconds.assert_not_called()
 
 
 if __name__ == "__main__":

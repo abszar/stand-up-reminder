@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import sys
+import time
 from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -56,6 +57,9 @@ APP_NAME = "Stand Up Reminder"
 ICON_NAME = "stand-up-reminder-symbolic"
 IDLE_POLL_SECONDS = 5
 PAUSE_PRESETS = (30 * 60, 60 * 60)
+# The standing pill: a figure, its count, and the gap it keeps from the edge.
+STANDING_ICON = "\N{STANDING PERSON}"
+PILL_EDGE_MARGIN = 12
 
 # One dot color per recorded outcome, on the break-card palette.
 TIMELINE_COLORS = {
@@ -150,6 +154,35 @@ def format_duration(seconds: int) -> str:
     return f"{minutes:02d}:{remainder:02d}"
 
 
+def format_elapsed(seconds: int) -> str:
+    """Count-up time: minutes and seconds, gaining an hour field past one."""
+    seconds = max(0, int(seconds))
+    hours, remainder = divmod(seconds, 3600)
+    minutes, second = divmod(remainder, 60)
+    if hours:
+        return f"{hours:d}:{minutes:02d}:{second:02d}"
+    return f"{minutes:02d}:{second:02d}"
+
+
+def standing_label(seconds: int) -> str:
+    """Pill text: the standing figure and how long it has been counting."""
+    return f"{STANDING_ICON} {format_elapsed(seconds)}"
+
+
+def pill_position(fraction: float, screen_height: int, pill_height: int) -> int:
+    """Top of the pill for a stored fraction, kept wholly on screen."""
+    travel = max(0, int(screen_height) - int(pill_height))
+    return int(round(min(1.0, max(0.0, fraction)) * travel))
+
+
+def pill_fraction(top: int, screen_height: int, pill_height: int) -> float:
+    """Fraction to store for a pill dragged to this top edge."""
+    travel = max(0, int(screen_height) - int(pill_height))
+    if travel <= 0:
+        return 0.0
+    return min(1.0, max(0.0, float(top) / travel))
+
+
 def duration_label(seconds: int) -> str:
     seconds = max(0, int(seconds))
     if seconds < 60:
@@ -187,6 +220,7 @@ class BreakView:
     can_skip: bool
     can_return: bool
     can_miss: bool = False
+    can_stand: bool = False
 
 
 def break_view(phase: Phase, seconds_remaining: int, away_seconds: int) -> BreakView:
@@ -212,6 +246,9 @@ def break_view(phase: Phase, seconds_remaining: int, away_seconds: int) -> Break
         can_skip=active,
         can_return=awaiting,
         can_miss=awaiting,
+        # A standing desk answers the break in either state: while it runs
+        # and once it is over and waiting to be confirmed.
+        can_stand=active or awaiting,
     )
 
 
@@ -365,6 +402,51 @@ button.break-skip {
     font-family: Cantarell, sans-serif;
     font-size: 12px;
     letter-spacing: 1px;
+}
+window.standing-pill {
+    background-color: transparent;
+}
+.standing-pill-body {
+    background-color: #294c47;
+    border: 1px solid #f2a65a;
+    border-radius: 18px;
+}
+.standing-pill-time {
+    color: #f2a65a;
+    font-family: "DejaVu Sans Mono", monospace;
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: 1px;
+}
+button.standing-pill-stop {
+    min-width: 22px;
+    min-height: 22px;
+    padding: 0;
+    border: 0;
+    border-radius: 11px;
+    background-image: none;
+    background-color: #18312e;
+    color: #c9ddd5;
+    box-shadow: none;
+    font-family: Cantarell, sans-serif;
+    font-size: 12px;
+    font-weight: 700;
+}
+button.standing-pill-stop:hover {
+    background-color: #e05d5d;
+    color: #18312e;
+}
+button.break-stand {
+    min-height: 38px;
+    border: 1px solid #7bc47f;
+    background-image: none;
+    border-radius: 6px;
+    color: #18312e;
+    background-color: #7bc47f;
+    box-shadow: none;
+    font-family: Cantarell, sans-serif;
+    font-size: 15px;
+    font-weight: 700;
 }
 progressbar.break-progress trough {
     min-height: 8px;
@@ -532,6 +614,127 @@ class HeatGrid(Gtk.DrawingArea):
         return True
 
 
+class StandingPill(Gtk.Window):
+    """A small pill on the right edge counting how long the user is standing.
+
+    It stays above other windows without taking focus, and is dragged up and
+    down the edge; the height it is left at is reported as a fraction of the
+    screen so that it can be restored on the next stand.
+    """
+
+    def __init__(self, on_stop, on_move) -> None:
+        super().__init__(type=Gtk.WindowType.TOPLEVEL, title=_("Standing"))
+        self._on_move = on_move
+        self._fraction = 0.5
+        self._drag_offset: Optional[float] = None
+        self._placed_width = 0
+        self.set_decorated(False)
+        self.set_resizable(False)
+        self.set_keep_above(True)
+        self.set_accept_focus(False)
+        self.set_focus_on_map(False)
+        self.set_skip_taskbar_hint(True)
+        self.set_skip_pager_hint(True)
+        self.set_type_hint(Gdk.WindowTypeHint.UTILITY)
+        self.stick()
+        self.set_app_paintable(True)
+        self.get_style_context().add_class("standing-pill")
+        screen = self.get_screen()
+        visual = screen.get_rgba_visual() if screen is not None else None
+        if visual is not None:
+            self.set_visual(visual)
+        self.add_events(
+            Gdk.EventMask.BUTTON_PRESS_MASK
+            | Gdk.EventMask.BUTTON_RELEASE_MASK
+            | Gdk.EventMask.POINTER_MOTION_MASK
+        )
+        self.connect("button-press-event", self._on_press)
+        self.connect("button-release-event", self._on_release)
+        self.connect("motion-notify-event", self._on_motion)
+        self.connect("size-allocate", self._on_size_allocate)
+        self.connect("delete-event", lambda *_args: True)
+
+        body = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        body.set_border_width(7)
+        body.get_style_context().add_class("standing-pill-body")
+
+        self.time_label = Gtk.Label(label=standing_label(0))
+        self.time_label.get_style_context().add_class("standing-pill-time")
+        self.time_label.set_tooltip_text(_("Standing since your last break"))
+
+        stop_button = Gtk.Button(label="\u2715")
+        stop_button.get_style_context().add_class("standing-pill-stop")
+        stop_button.set_tooltip_text(_("I'm sitting down — stop this timer"))
+        stop_button.connect("clicked", on_stop)
+
+        body.pack_start(self.time_label, False, False, 0)
+        body.pack_start(stop_button, False, False, 0)
+        self.add(body)
+
+    def set_seconds(self, seconds: int) -> None:
+        self.time_label.set_text(standing_label(seconds))
+
+    def show_at(self, fraction: float) -> None:
+        self._fraction = min(1.0, max(0.0, float(fraction)))
+        self.show_all()
+        self._place()
+        self.present()
+
+    def _monitor_geometry(self):
+        display = Gdk.Display.get_default()
+        if display is None:
+            return None
+        monitor = display.get_primary_monitor() or display.get_monitor(0)
+        return monitor.get_geometry() if monitor is not None else None
+
+    def _place(self) -> None:
+        geometry = self._monitor_geometry()
+        if geometry is None:
+            return
+        width, height = self.get_size()
+        self._placed_width = width
+        self.move(
+            geometry.x + geometry.width - width - PILL_EDGE_MARGIN,
+            geometry.y + pill_position(self._fraction, geometry.height, height),
+        )
+
+    def _on_size_allocate(self, _widget, allocation) -> None:
+        # The pill grows an hour field as it counts; keep it on the edge.
+        if self._drag_offset is None and allocation.width != self._placed_width:
+            self._place()
+
+    def _on_press(self, _widget, event) -> bool:
+        if event.button != 1:
+            return False
+        _x, y = self.get_position()
+        self._drag_offset = event.y_root - y
+        return True
+
+    def _on_motion(self, _widget, event) -> bool:
+        if self._drag_offset is None:
+            return False
+        geometry = self._monitor_geometry()
+        if geometry is None:
+            return False
+        width, height = self.get_size()
+        top = int(event.y_root - self._drag_offset) - geometry.y
+        travel = max(0, geometry.height - height)
+        top = max(0, min(travel, top))
+        self._fraction = pill_fraction(top, geometry.height, height)
+        self.move(
+            geometry.x + geometry.width - width - PILL_EDGE_MARGIN,
+            geometry.y + top,
+        )
+        return True
+
+    def _on_release(self, _widget, event) -> bool:
+        if self._drag_offset is None:
+            return False
+        self._drag_offset = None
+        self._on_move(self._fraction)
+        return True
+
+
 class DimmerWindow(Gtk.Window):
     """A dark cover for monitors that are not showing the break card."""
 
@@ -563,6 +766,7 @@ class BreakWindow(Gtk.ApplicationWindow):
         on_skip,
         on_return,
         on_miss,
+        on_stand,
         wayland: bool = False,
     ) -> None:
         super().__init__(application=application, title=_("Time to stand up"))
@@ -653,6 +857,12 @@ class BreakWindow(Gtk.ApplicationWindow):
         self.return_actions.pack_start(self.return_button, True, True, 0)
         self.return_actions.pack_start(self.miss_button, True, True, 0)
 
+        self.stand_button = Gtk.Button(label=_("I'm standing — keep counting"))
+        self.stand_button.set_hexpand(True)
+        self.stand_button.set_no_show_all(True)
+        self.stand_button.get_style_context().add_class("break-stand")
+        self.stand_button.connect("clicked", on_stand)
+
         self.shortcuts = Gtk.Label()
         self.shortcuts.set_xalign(0.0)
         self.shortcuts.get_style_context().add_class("break-shortcuts")
@@ -671,6 +881,7 @@ class BreakWindow(Gtk.ApplicationWindow):
         card.pack_start(prompt, False, False, 0)
         card.pack_start(self.break_actions, False, False, 0)
         card.pack_start(self.return_actions, False, False, 0)
+        card.pack_start(self.stand_button, False, False, 0)
         card.pack_start(self.timeline, False, False, 0)
         card.pack_start(self.scores, False, False, 0)
         card.pack_start(self.shortcuts, False, False, 0)
@@ -721,6 +932,12 @@ class BreakWindow(Gtk.ApplicationWindow):
         ):
             self.skip_button.clicked()
             return True
+        if self.stand_button.get_visible() and event.keyval in (
+            Gdk.KEY_t,
+            Gdk.KEY_T,
+        ):
+            self.stand_button.clicked()
+            return True
         if self.return_button.get_visible() and event.keyval in (
             Gdk.KEY_Return,
             Gdk.KEY_KP_Enter,
@@ -756,12 +973,16 @@ class BreakWindow(Gtk.ApplicationWindow):
         self.skip_button.set_visible(view.can_skip)
         self.return_button.set_visible(view.can_return)
         self.miss_button.set_visible(view.can_miss)
+        self.stand_button.set_visible(view.can_stand)
         if view.can_return:
             shortcuts = _("Enter to confirm")
         elif view.can_snooze:
             shortcuts = _("S to snooze · K to skip")
         else:
             shortcuts = ""
+        if view.can_stand:
+            standing = _("T if you're standing")
+            shortcuts = f"{shortcuts} · {standing}" if shortcuts else standing
         self.shortcuts.set_text(shortcuts)
 
     def enforce_front(self) -> None:
@@ -952,6 +1173,7 @@ class ReminderApplication(Gtk.Application):
         self.scheduler: Optional[Scheduler] = None
         self.window: Optional[BreakWindow] = None
         self.stats_window: Optional[StatsWindow] = None
+        self.pill: Optional[StandingPill] = None
         self.settings = Settings()
         self.indicator = None
         self.stats = None
@@ -979,6 +1201,8 @@ class ReminderApplication(Gtk.Application):
         self._score_day = ""
         self._indicator_label = None
         self._idle_credit_pending = False
+        self._standing_since: Optional[float] = None
+        self._clock = time.monotonic
         self._suppress_menu_events = False
         self._wayland = False
         self._started = False
@@ -1062,6 +1286,7 @@ class ReminderApplication(Gtk.Application):
             self._skip_break,
             self._confirm_return,
             self._missed_break,
+            self._stand_up,
             wayland=self._wayland,
         )
         self.window.set_snooze_seconds(int(snooze_seconds))
@@ -1483,6 +1708,8 @@ class ReminderApplication(Gtk.Application):
                 self.window.hide()
                 self._hide_dimmers()
 
+        self._refresh_standing_pill()
+
     def _record_outcome(self, outcome: BreakOutcome) -> None:
         if self.stats is None:
             return
@@ -1586,6 +1813,39 @@ class ReminderApplication(Gtk.Application):
             self._hide_dimmers()
         self._update_interface()
 
+    def _stand_up(self, _button) -> None:
+        """Take the break standing: count it, then start the standing pill."""
+        transition = self.scheduler.stand_up()
+        if transition is Transition.END_BREAK:
+            self._record_outcome(BreakOutcome.TAKEN)
+            self._apply_transition(transition)
+            self._start_standing()
+        self._update_interface()
+
+    def _start_standing(self) -> None:
+        if self.pill is None:
+            self.pill = StandingPill(self._sit_down, self._standing_pill_moved)
+        self._standing_since = self._clock()
+        self.pill.set_seconds(0)
+        self.pill.show_at(self.settings.standing_pill_position)
+
+    def _sit_down(self, _button) -> None:
+        self._stop_standing()
+        self._update_interface()
+
+    def _stop_standing(self) -> None:
+        if self.pill is not None:
+            self.pill.hide()
+        self._standing_since = None
+
+    def _refresh_standing_pill(self) -> None:
+        if self._standing_since is None or self.pill is None:
+            return
+        self.pill.set_seconds(int(self._clock() - self._standing_since))
+
+    def _standing_pill_moved(self, fraction: float) -> None:
+        self._save_settings(standing_pill_position=fraction)
+
     def _reset_work_interval(self, _item) -> None:
         was_awaiting = self.scheduler.snapshot().phase is Phase.AWAITING_RETURN
         if self.scheduler.reset_work_interval():
@@ -1648,6 +1908,8 @@ class ReminderApplication(Gtk.Application):
             self.indicator.set_status(AyatanaAppIndicator3.IndicatorStatus.PASSIVE)
         for dimmer in self._dimmers:
             dimmer.destroy()
+        if self.pill:
+            self.pill.destroy()
         if self.stats_window:
             self.stats_window.destroy()
         if self.window:
