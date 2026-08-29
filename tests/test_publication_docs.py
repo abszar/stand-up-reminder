@@ -84,7 +84,12 @@ class PublicationDocumentTests(unittest.TestCase):
 
         for raw_path in filter(None, tracked):
             relative_path = raw_path.decode("utf-8")
-            contents = self.read(relative_path)
+            try:
+                contents = self.read(relative_path)
+            except UnicodeDecodeError:
+                # Sprites and fonts are binary; an address cannot hide in
+                # them the way it can in tracked text.
+                continue
             for match in email_pattern.finditer(contents):
                 with self.subTest(path=relative_path, address=match.group(0)):
                     self.assertTrue(

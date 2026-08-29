@@ -272,15 +272,19 @@ class Face(Gtk.DrawingArea):
         self._expression, self._color = expression, color
         self.queue_draw()
 
-    def play_grin(self) -> None:
-        """Six frames of grin, then back to rest — the reward face."""
+    def play_grin(self, hold: str = "rest") -> None:
+        """Six frames of grin, then the expression the state calls for.
+
+        A confirmed break falls back to rest; a week worth grinning about
+        keeps the grin, because that is its resting face.
+        """
         if not animations_enabled():
             self.set_face("grin2", PALETTE["mint"])
             GLib.timeout_add(
-                300, lambda: (self.set_face("rest", PALETTE["mint"]), False)[1]
+                300, lambda: (self.set_face(hold, PALETTE["mint"]), False)[1]
             )
             return
-        frames = ["grin1", "grin2", "grin1", "grin2", "grin1", "rest"]
+        frames = ["grin1", "grin2", "grin1", "grin2", "grin1", hold]
 
         def step() -> bool:
             self.set_face(frames.pop(0), PALETTE["mint"])

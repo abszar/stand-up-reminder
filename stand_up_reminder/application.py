@@ -1400,7 +1400,7 @@ class StatsWindow(Gtk.Window, ui.PixelFrameWindow):
         self.days_grid.play_fill()
         target = getattr(self, "_score_target", None)
         if target is not None and target >= 85:
-            self.face.play_grin()
+            self.face.play_grin(hold="grin1")
         if target is None or not ui.animations_enabled():
             return
         color = pixels.band_color(target)
