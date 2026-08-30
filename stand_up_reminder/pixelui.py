@@ -13,7 +13,10 @@ import gi
 
 gi.require_version("Gtk", "3.0")
 
-from gi.repository import Gdk, GLib, Gtk
+gi.require_version("Pango", "1.0")
+gi.require_version("PangoCairo", "1.0")
+
+from gi.repository import Gdk, GLib, Gtk, Pango, PangoCairo
 
 from . import pixels
 from .i18n import _
@@ -298,6 +301,73 @@ class Face(Gtk.DrawingArea):
         SPRITES.face(context, 0, 0, self._scale, self._color, self._expression, self._sheet)
         return False
 
+
+
+class ScoreLine(Gtk.DrawingArea):
+    """The face and the day's scores, drawn together on one line.
+
+    Boxes align on the line box, not on the glyphs, and Silkscreen leaves so
+    much room above its letters that a face aligned that way floats. Drawing
+    both here puts the middle of the face on the middle of the letters.
+    """
+
+    FONT = "Silkscreen 16px"
+    GAP = ap(2)
+
+    def __init__(self, scale: int = 2, sheet: str = "face-bob") -> None:
+        super().__init__()
+        self._scale = scale
+        self._sheet = sheet
+        self._side = (8 if sheet == "face-bob" else 16) * scale
+        self._text = ""
+        self._expression = "rest"
+        self._face_color = PALETTE["mist"]
+        self._text_color = PALETTE["mist"]
+        self.set_size_request(-1, self._side)
+        self.connect("draw", self._on_draw)
+
+    def set_line(self, text: str, expression: str, color: str) -> None:
+        if (text, expression, color) == (
+            self._text,
+            self._expression,
+            self._face_color,
+        ):
+            return
+        self._text, self._expression, self._face_color = text, expression, color
+        self.queue_draw()
+
+    def _layout(self):
+        layout = self.create_pango_layout(self._text)
+        layout.set_font_description(Pango.FontDescription(self.FONT))
+        attributes = Pango.AttrList()
+        attributes.insert(Pango.attr_letter_spacing_new(Pango.SCALE))
+        layout.set_attributes(attributes)
+        return layout
+
+    def _on_draw(self, _area, context) -> bool:
+        layout = self._layout()
+        ink, logical = layout.get_pixel_extents()
+        width = self.get_allocated_width()
+        height = self.get_allocated_height()
+        total = self._side + self.GAP + logical.width
+        left = max(0, (width - total) // 2)
+        middle = height / 2
+        SPRITES.face(
+            context,
+            left,
+            int(middle - self._side / 2),
+            self._scale,
+            self._face_color,
+            self._expression,
+            self._sheet,
+        )
+        context.set_source_rgb(*rgb(self._text_color))
+        context.move_to(
+            left + self._side + self.GAP,
+            middle - (ink.y + ink.height / 2),
+        )
+        PangoCairo.show_layout(context, layout)
+        return False
 
 
 class SpriteDigits(Gtk.DrawingArea):

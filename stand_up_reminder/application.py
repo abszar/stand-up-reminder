@@ -1002,14 +1002,9 @@ class BreakWindow(Gtk.ApplicationWindow, ui.PixelFrameWindow):
         self.track.set_no_show_all(True)
         card.pack_start(self.track, False, False, 0)
 
-        verdict_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=ap(2))
-        verdict_row.set_margin_top(ap(2))
-        verdict_row.set_halign(Gtk.Align.CENTER)
-        self.mood = ui.Face(scale=2, sheet="face-bob")
-        self.scores = ui.pixel_label("", "pixel-secondary")
-        verdict_row.pack_start(self.mood, False, False, 0)
-        verdict_row.pack_start(self.scores, False, False, 0)
-        card.pack_start(verdict_row, False, False, 0)
+        self.scores = ui.ScoreLine()
+        self.scores.set_margin_top(ap(2))
+        card.pack_start(self.scores, False, False, 0)
 
         self.wipe = ui.WipeOverlay()
         overlay = Gtk.Overlay()
@@ -1027,9 +1022,9 @@ class BreakWindow(Gtk.ApplicationWindow, ui.PixelFrameWindow):
         self.warning_seconds = warning_seconds
 
     def set_scores(self, text: str, today_percent: Optional[int]) -> None:
-        self.scores.set_text(text)
         # The face is the verdict on the day: its disc carries the band.
-        self.mood.set_face(
+        self.scores.set_line(
+            text,
             "rest" if (today_percent or 0) >= 50 else "flat",
             pixels.band_color(today_percent),
         )
@@ -1152,7 +1147,7 @@ class BreakWindow(Gtk.ApplicationWindow, ui.PixelFrameWindow):
         The score-line face is the 8 × 8 art, which has no grin frame, so it
         marks the moment by turning mint rather than by changing expression.
         """
-        self.mood.set_face("rest", PALETTE["mint"])
+        self.scores.set_line(self.scores._text, "rest", PALETTE["mint"])
         self.burst.play(done)
 
     def play_missed(self, done) -> None:
@@ -1239,6 +1234,7 @@ class StatsWindow(Gtk.Window, ui.PixelFrameWindow):
         self.percent = ui.PercentMark(self.SCORE_SCALE // 2)
         self.face = ui.Face(scale=6)
         self.face.set_halign(Gtk.Align.END)
+        self.face.set_valign(Gtk.Align.CENTER)
         score_row.pack_start(self.score, False, False, 0)
         score_row.pack_start(self.percent, False, False, 0)
         score_row.pack_end(self.face, False, False, 0)
