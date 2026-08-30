@@ -16,6 +16,10 @@ DEFAULT_WARNING_SECONDS = 15
 DEFAULT_IDLE_CREDIT_SECONDS = 10 * 60
 # Where the standing pill sits, as a fraction of the screen height.
 DEFAULT_STANDING_PILL_POSITION = 0.5
+# The eye break runs on its own clock beside the standing cycle; the bounds
+# are the presets the settings page offers.
+DEFAULT_EYE_INTERVAL_SECONDS = 20 * 60
+EYE_INTERVAL_BOUNDS = (15 * 60, 30 * 60)
 
 WORK_SECONDS_RANGE = (60, 4 * 60 * 60)
 BREAK_SECONDS_RANGE = (15, 60 * 60)
@@ -43,6 +47,11 @@ class Settings:
     # not the audible one: a cue added in a later version is then audible by
     # default, and no settings file written before it existed needs touching.
     muted_sounds: frozenset = frozenset()
+    eye_breaks_enabled: bool = True
+    eye_interval_seconds: int = DEFAULT_EYE_INTERVAL_SECONDS
+    # Which of the three eye prompts are switched off, held as the muted set
+    # for the same reason as the sounds: a prompt added later shows up.
+    muted_prompts: frozenset = frozenset()
     standing_pill_position: float = DEFAULT_STANDING_PILL_POSITION
 
 
@@ -122,6 +131,14 @@ def settings_from_payload(payload: dict) -> Settings:
         show_countdown=_read_flag(payload, "show_countdown", True),
         sound_enabled=_read_flag(payload, "sound_enabled", False),
         muted_sounds=_read_names(payload, "muted_sounds"),
+        eye_breaks_enabled=_read_flag(payload, "eye_breaks_enabled", True),
+        eye_interval_seconds=_read_duration(
+            payload,
+            "eye_interval_seconds",
+            EYE_INTERVAL_BOUNDS,
+            DEFAULT_EYE_INTERVAL_SECONDS,
+        ),
+        muted_prompts=_read_names(payload, "muted_prompts"),
         standing_pill_position=_read_fraction(
             payload, "standing_pill_position", DEFAULT_STANDING_PILL_POSITION
         ),
@@ -150,6 +167,7 @@ class SettingsStore:
         payload = asdict(settings)
         payload["timing_mode"] = payload.pop("mode").value
         payload["muted_sounds"] = sorted(payload["muted_sounds"])
+        payload["muted_prompts"] = sorted(payload["muted_prompts"])
         self.path.parent.mkdir(parents=True, exist_ok=True)
         temporary = self.path.with_suffix(".tmp")
         try:

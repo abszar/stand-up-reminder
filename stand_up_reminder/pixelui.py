@@ -82,13 +82,28 @@ def use_rgba_visual(window: Gtk.Window) -> None:
 class PixelFrameWindow:
     """Mixin giving a window the pixel frame and its cut corners."""
 
+    ring_color = PALETTE["edge"]
+    body_color = PALETTE["ink"]
+
     def setup_frame(self) -> None:
         use_rgba_visual(self)
         self.connect("draw", self._on_frame_draw)
 
+    def set_frame_colors(self, ring: str = "", body: str = "") -> None:
+        """Recolour the frame, for windows that carry their own accent."""
+        if ring:
+            self.ring_color = ring
+        if body:
+            self.body_color = body
+        self.queue_draw()
+
     def _on_frame_draw(self, _widget, context) -> bool:
         paint_frame(
-            context, self.get_allocated_width(), self.get_allocated_height()
+            context,
+            self.get_allocated_width(),
+            self.get_allocated_height(),
+            self.ring_color,
+            self.body_color,
         )
         return False
 
@@ -142,6 +157,7 @@ class CellBar(Gtk.DrawingArea):
         self._filled = pixels.PROGRESS_CELLS
         self._urgent = False
         self._flipped = 0
+        self._accent = PALETTE["amber"]
         self._dying: Optional[tuple[int, int]] = None
         self.set_size_request(-1, self.CELL_HEIGHT)
         self.connect("draw", self._on_draw)
@@ -160,6 +176,13 @@ class CellBar(Gtk.DrawingArea):
             self._start_urgency_flip(filled)
         elif not self._urgent:
             self._flipped = 0
+        self.queue_draw()
+
+    def set_accent(self, color: str) -> None:
+        """Colour the live cells, for a bar that belongs to its own card."""
+        if color == self._accent:
+            return
+        self._accent = color
         self.queue_draw()
 
     def _start_urgency_flip(self, filled: int) -> None:
@@ -193,12 +216,12 @@ class CellBar(Gtk.DrawingArea):
     def _on_draw(self, _area, context) -> bool:
         for index in range(pixels.PROGRESS_CELLS):
             if self._dying is not None and index == self._dying[0]:
-                color = (PALETTE["amber"], PALETTE["bone"], PALETTE["slate"])[
+                color = (self._accent, PALETTE["bone"], PALETTE["slate"])[
                     self._dying[1]
                 ]
             elif index < self._filled:
                 flipped = self._urgent and index < self._flipped
-                color = PALETTE["coral"] if flipped else PALETTE["amber"]
+                color = PALETTE["coral"] if flipped else self._accent
             else:
                 color = PALETTE["slate"]
             context.set_source_rgb(*rgb(color))

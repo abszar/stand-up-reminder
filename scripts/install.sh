@@ -12,7 +12,8 @@ install -d "$user_data_root/applications"
 install -d "$user_data_root/icons/hicolor/scalable/apps"
 install -d "$user_data_root/icons/hicolor/scalable/status"
 install -d "$user_config_root/autostart" "$user_config_root/systemd/user"
-install -d "$app_install_root/sprites" "$user_data_root/fonts/stand-up-reminder"
+install -d "$app_install_root/sprites" "$app_install_root/sounds"
+install -d "$user_data_root/fonts/stand-up-reminder"
 
 for app_source in "$project_root"/stand_up_reminder/*.py; do
     install -m 0644 "$app_source" "$app_install_root/stand_up_reminder/"
@@ -31,6 +32,9 @@ rm -rf "$app_install_root/stand_up_reminder/__pycache__"
 # beside the package, the font goes where fontconfig will find it.
 for sprite in "$project_root"/data/sprites/*.png; do
     install -m 0644 "$sprite" "$app_install_root/sprites/"
+done
+for cue in "$project_root"/data/sounds/*.wav; do
+    install -m 0644 "$cue" "$app_install_root/sounds/"
 done
 for font in "$project_root"/data/fonts/*.ttf; do
     install -m 0644 "$font" "$user_data_root/fonts/stand-up-reminder/"

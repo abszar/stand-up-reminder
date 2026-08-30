@@ -73,6 +73,9 @@ class SettingsStoreTests(unittest.TestCase):
             show_countdown=False,
             sound_enabled=True,
             muted_sounds=frozenset({"break_done"}),
+            eye_breaks_enabled=False,
+            eye_interval_seconds=30 * 60,
+            muted_prompts=frozenset({"move"}),
             standing_pill_position=0.2,
         )
         self.store.save(saved)
@@ -158,6 +161,39 @@ class MutedSoundTests(unittest.TestCase):
     def test_unknown_names_are_kept_so_a_cue_survives_being_renamed_back(self):
         settings = settings_from_payload({"muted_sounds": ["not_a_cue_yet"]})
         self.assertEqual(settings.muted_sounds, frozenset({"not_a_cue_yet"}))
+
+
+class EyeBreakSettingTests(unittest.TestCase):
+    def test_eye_breaks_start_switched_on_at_twenty_minutes(self):
+        settings = Settings()
+        self.assertTrue(settings.eye_breaks_enabled)
+        self.assertEqual(settings.eye_interval_seconds, 20 * 60)
+        self.assertEqual(settings.muted_prompts, frozenset())
+
+    def test_a_stored_interval_is_read_back(self):
+        self.assertEqual(
+            settings_from_payload({"eye_interval_seconds": 15 * 60}).eye_interval_seconds,
+            15 * 60,
+        )
+
+    def test_an_interval_outside_the_offered_range_is_clamped(self):
+        self.assertEqual(
+            settings_from_payload({"eye_interval_seconds": 5}).eye_interval_seconds,
+            15 * 60,
+        )
+        self.assertEqual(
+            settings_from_payload({"eye_interval_seconds": 99999}).eye_interval_seconds,
+            30 * 60,
+        )
+
+    def test_muted_prompts_read_back_like_muted_sounds(self):
+        self.assertEqual(
+            settings_from_payload({"muted_prompts": ["move"]}).muted_prompts,
+            frozenset({"move"}),
+        )
+        self.assertEqual(
+            settings_from_payload({"muted_prompts": "move"}).muted_prompts, frozenset()
+        )
 
 
 if __name__ == "__main__":

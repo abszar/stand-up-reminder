@@ -3,6 +3,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 from stand_up_reminder import application
+from stand_up_reminder import eyes
 
 from stand_up_reminder.application import (
     duration_label,
@@ -149,7 +150,24 @@ class SoundCueTests(unittest.TestCase):
         for cue in application.SOUND_CUES:
             with self.subTest(cue.key):
                 self.assertTrue(cue.label)
-                self.assertTrue(cue.event_id)
+
+    def test_a_cue_names_either_a_system_event_or_a_shipped_file(self):
+        for cue in application.SOUND_CUES:
+            with self.subTest(cue.key):
+                self.assertTrue(bool(cue.event_id) != bool(cue.filename))
+
+    def test_every_shipped_sound_file_is_actually_there(self):
+        for cue in application.SOUND_CUES:
+            if not cue.filename:
+                continue
+            with self.subTest(cue.key):
+                self.assertTrue((application.sound_dir() / cue.filename).is_file())
+
+    def test_each_eye_prompt_has_a_cue_of_its_own(self):
+        keys = {cue.key for cue in application.SOUND_CUES}
+        for prompt in eyes.PROMPTS:
+            with self.subTest(prompt.key):
+                self.assertIn("eye_" + prompt.key, keys)
 
     def test_the_master_switch_silences_everything(self):
         settings = Settings(sound_enabled=False)
@@ -195,6 +213,111 @@ class SoundCueTests(unittest.TestCase):
         self.assertEqual(
             application.toggled_mutes(frozenset(), "break_start", True), frozenset()
         )
+
+
+class SoundPlayerTests(unittest.TestCase):
+    def test_pulseaudio_is_preferred_when_both_are_present(self):
+        self.assertEqual(
+            application.sound_player(lambda name: "/usr/bin/" + name), "/usr/bin/paplay"
+        )
+
+    def test_alsa_is_used_when_it_is_all_there_is(self):
+        found = {"aplay": "/usr/bin/aplay"}
+        self.assertEqual(
+            application.sound_player(found.get), "/usr/bin/aplay"
+        )
+
+    def test_no_player_at_all_is_reported_as_nothing(self):
+        self.assertEqual(application.sound_player(lambda _name: None), "")
+
+
+class EyeClockTests(unittest.TestCase):
+    def make_app(self, **settings_kwargs):
+        settings = Settings(**settings_kwargs)
+        return SimpleNamespace(
+            settings=settings,
+            scheduler=Mock(),
+            eye_card=None,
+            _eye_seconds=0,
+            _eye_index=0,
+            _show_eye_card=Mock(),
+        )
+
+    def test_the_clock_stands_still_while_the_feature_is_off(self):
+        app = self.make_app(eye_breaks_enabled=False)
+        app._eye_seconds = 500
+        application.ReminderApplication._advance_eye_clock(app)
+        self.assertEqual(app._eye_seconds, 0)
+        app._show_eye_card.assert_not_called()
+
+    def test_the_clock_counts_up_between_cards(self):
+        app = self.make_app(eye_interval_seconds=1200)
+        application.ReminderApplication._advance_eye_clock(app)
+        self.assertEqual(app._eye_seconds, 1)
+        app._show_eye_card.assert_not_called()
+
+    def test_a_card_opens_on_the_interval_and_the_clock_restarts(self):
+        app = self.make_app(eye_interval_seconds=1200)
+        app._eye_seconds = 1199
+        application.ReminderApplication._advance_eye_clock(app)
+        app._show_eye_card.assert_called_once_with()
+        self.assertEqual(app._eye_seconds, 0)
+
+
+class EyeCardTests(unittest.TestCase):
+    def make_app(self, phase=Phase.WORK, **settings_kwargs):
+        app = SimpleNamespace(
+            settings=Settings(**settings_kwargs),
+            scheduler=Mock(),
+            eye_card=Mock(),
+            _eye_index=0,
+            _play_sound=Mock(),
+            _eye_squeezed=Mock(),
+            _eye_finished=Mock(),
+        )
+        app.scheduler.snapshot.return_value = SimpleNamespace(locked=False, phase=phase)
+        app.eye_card.get_visible.return_value = False
+        return app
+
+    def test_a_card_shows_the_next_prompt_and_plays_its_cue(self):
+        app = self.make_app()
+        application.ReminderApplication._show_eye_card(app)
+        prompt = app.eye_card.begin.call_args.args[0]
+        self.assertEqual(prompt.key, eyes.ROTATION[0])
+        app._play_sound.assert_called_once_with(
+            application.EYE_CUES["eye_" + prompt.key]
+        )
+
+    def test_no_card_lands_on_top_of_a_break(self):
+        for phase in (Phase.BREAK, Phase.AWAITING_RETURN):
+            with self.subTest(phase):
+                app = self.make_app(phase=phase)
+                application.ReminderApplication._show_eye_card(app)
+                app.eye_card.begin.assert_not_called()
+
+    def test_no_card_arrives_over_a_locked_screen(self):
+        app = self.make_app()
+        app.scheduler.snapshot.return_value = SimpleNamespace(
+            locked=True, phase=Phase.WORK
+        )
+        application.ReminderApplication._show_eye_card(app)
+        app.eye_card.begin.assert_not_called()
+
+    def test_a_card_already_up_is_not_replaced(self):
+        app = self.make_app()
+        app.eye_card.get_visible.return_value = True
+        application.ReminderApplication._show_eye_card(app)
+        app.eye_card.begin.assert_not_called()
+
+    def test_muting_every_prompt_shows_nothing(self):
+        app = self.make_app(muted_prompts=frozenset({"far", "shut", "move"}))
+        application.ReminderApplication._show_eye_card(app)
+        app.eye_card.begin.assert_not_called()
+
+    def test_the_rotation_moves_on_with_each_card(self):
+        app = self.make_app()
+        application.ReminderApplication._show_eye_card(app)
+        self.assertEqual(app._eye_index, 1)
 
 
 class CountdownStateTests(unittest.TestCase):

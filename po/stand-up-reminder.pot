@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Stand Up Reminder 1.2.0\n"
 "Report-Msgid-Bugs-To: https://github.com/abszar/stand-up-reminder/issues\n"
-"POT-Creation-Date: 2026-08-30 15:27+0200\n"
+"POT-Creation-Date: 2026-08-30 15:41+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE\n"
@@ -24,6 +24,26 @@ msgstr ""
 
 #: stand_up_reminder/application.py
 msgid "The break finishing"
+msgstr ""
+
+#: stand_up_reminder/application.py
+msgid "Look far"
+msgstr ""
+
+#: stand_up_reminder/application.py stand_up_reminder/eyes.py
+msgid "Close your eyes"
+msgstr ""
+
+#: stand_up_reminder/application.py stand_up_reminder/eyes.py
+msgid "Move your eyes"
+msgstr ""
+
+#: stand_up_reminder/application.py
+msgid "Each squeeze"
+msgstr ""
+
+#: stand_up_reminder/application.py
+msgid "An eye break ending"
 msgstr ""
 
 #: stand_up_reminder/application.py
@@ -268,6 +288,19 @@ msgid "Show the countdown in the top bar"
 msgstr ""
 
 #: stand_up_reminder/application.py
+msgid "EYE BREAKS"
+msgstr ""
+
+#: stand_up_reminder/application.py
+msgid "Rest my eyes on a timer"
+msgstr ""
+
+#: stand_up_reminder/application.py
+#, python-format
+msgid "%d MIN"
+msgstr ""
+
+#: stand_up_reminder/application.py
 msgid "SOUND"
 msgstr ""
 
@@ -277,11 +310,6 @@ msgstr ""
 
 #: stand_up_reminder/application.py
 msgid "AWAY COUNTS AFTER"
-msgstr ""
-
-#: stand_up_reminder/application.py
-#, python-format
-msgid "%d MIN"
 msgstr ""
 
 #: stand_up_reminder/application.py
@@ -327,6 +355,58 @@ msgstr ""
 
 #: stand_up_reminder/application.py
 msgid "Open Stand Up Reminder"
+msgstr ""
+
+#: stand_up_reminder/eyecard.py
+msgid "Eye break"
+msgstr ""
+
+#: stand_up_reminder/eyecard.py
+msgid "CLICK SKIPS"
+msgstr ""
+
+#: stand_up_reminder/eyes.py
+msgid "LOOK FAR"
+msgstr ""
+
+#: stand_up_reminder/eyes.py
+msgid "SOMETHING 6 METRES OFF"
+msgstr ""
+
+#: stand_up_reminder/eyes.py
+msgid "Look out a window"
+msgstr ""
+
+#: stand_up_reminder/eyes.py
+msgid "CLOSE YOUR EYES"
+msgstr ""
+
+#: stand_up_reminder/eyes.py
+msgid "CLOSE"
+msgstr ""
+
+#: stand_up_reminder/eyes.py
+msgid "MOVE YOUR EYES"
+msgstr ""
+
+#: stand_up_reminder/eyes.py
+msgid "FOLLOW THE LIT DOT"
+msgstr ""
+
+#: stand_up_reminder/eyes.py
+msgid "SQUEEZE"
+msgstr ""
+
+#: stand_up_reminder/eyes.py
+msgid "LET GO"
+msgstr ""
+
+#: stand_up_reminder/eyes.py
+msgid "REST"
+msgstr ""
+
+#: stand_up_reminder/eyes.py
+msgid "OPEN"
 msgstr ""
 
 #: stand_up_reminder/pixelui.py

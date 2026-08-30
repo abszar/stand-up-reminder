@@ -25,6 +25,7 @@ install -d "$staging/usr/share/icons/hicolor/scalable/apps"
 install -d "$staging/usr/share/icons/hicolor/scalable/status"
 install -d "$staging/etc/xdg/autostart"
 install -d "$staging/usr/lib/$package_name/sprites"
+install -d "$staging/usr/lib/$package_name/sounds"
 install -d "$staging/usr/share/fonts/truetype/$package_name"
 
 for module in stand_up_reminder/*.py; do
@@ -33,6 +34,9 @@ done
 
 for sprite in data/sprites/*.png; do
     install -m 0644 "$sprite" "$staging/usr/lib/$package_name/sprites/"
+done
+for cue in data/sounds/*.wav; do
+    install -m 0644 "$cue" "$staging/usr/lib/$package_name/sounds/"
 done
 for font in data/fonts/*.ttf; do
     install -m 0644 "$font" "$staging/usr/share/fonts/truetype/$package_name/"

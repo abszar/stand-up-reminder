@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Stand Up Reminder 1.2.0\n"
 "Report-Msgid-Bugs-To: https://github.com/abszar/stand-up-reminder/issues\n"
-"POT-Creation-Date: 2026-08-30 15:27+0200\n"
+"POT-Creation-Date: 2026-08-30 15:41+0200\n"
 "PO-Revision-Date: 2026-07-20 23:40+0200\n"
 "Last-Translator: Automatically generated\n"
 "Language-Team: none\n"
@@ -24,6 +24,26 @@ msgstr "Le début de la pause"
 #: stand_up_reminder/application.py
 msgid "The break finishing"
 msgstr "La fin de la pause"
+
+#: stand_up_reminder/application.py
+msgid "Look far"
+msgstr "Regarder au loin"
+
+#: stand_up_reminder/application.py stand_up_reminder/eyes.py
+msgid "Close your eyes"
+msgstr "Fermer les yeux"
+
+#: stand_up_reminder/application.py stand_up_reminder/eyes.py
+msgid "Move your eyes"
+msgstr "Bouger les yeux"
+
+#: stand_up_reminder/application.py
+msgid "Each squeeze"
+msgstr "Chaque contraction"
+
+#: stand_up_reminder/application.py
+msgid "An eye break ending"
+msgstr "La fin d'une pause des yeux"
 
 #: stand_up_reminder/application.py
 #, python-format
@@ -269,6 +289,19 @@ msgid "Show the countdown in the top bar"
 msgstr "Afficher le compte à rebours en haut"
 
 #: stand_up_reminder/application.py
+msgid "EYE BREAKS"
+msgstr "PAUSES DES YEUX"
+
+#: stand_up_reminder/application.py
+msgid "Rest my eyes on a timer"
+msgstr "Reposer mes yeux à intervalles"
+
+#: stand_up_reminder/application.py
+#, python-format
+msgid "%d MIN"
+msgstr "%d MIN"
+
+#: stand_up_reminder/application.py
 msgid "SOUND"
 msgstr "SON"
 
@@ -279,11 +312,6 @@ msgstr "Jouer les sons"
 #: stand_up_reminder/application.py
 msgid "AWAY COUNTS AFTER"
 msgstr "ABSENCE COMPTÉE APRÈS"
-
-#: stand_up_reminder/application.py
-#, python-format
-msgid "%d MIN"
-msgstr "%d MIN"
 
 #: stand_up_reminder/application.py
 msgid "Done"
@@ -329,6 +357,58 @@ msgstr "Prochaine pause dans 30:00"
 #: stand_up_reminder/application.py
 msgid "Open Stand Up Reminder"
 msgstr "Ouvrir Stand Up Reminder"
+
+#: stand_up_reminder/eyecard.py
+msgid "Eye break"
+msgstr "Pause des yeux"
+
+#: stand_up_reminder/eyecard.py
+msgid "CLICK SKIPS"
+msgstr "CLIC POUR PASSER"
+
+#: stand_up_reminder/eyes.py
+msgid "LOOK FAR"
+msgstr "REGARDER AU LOIN"
+
+#: stand_up_reminder/eyes.py
+msgid "SOMETHING 6 METRES OFF"
+msgstr "QUELQUE CHOSE À 6 MÈTRES"
+
+#: stand_up_reminder/eyes.py
+msgid "Look out a window"
+msgstr "Regarder par la fenêtre"
+
+#: stand_up_reminder/eyes.py
+msgid "CLOSE YOUR EYES"
+msgstr "FERMER LES YEUX"
+
+#: stand_up_reminder/eyes.py
+msgid "CLOSE"
+msgstr "FERMEZ"
+
+#: stand_up_reminder/eyes.py
+msgid "MOVE YOUR EYES"
+msgstr "BOUGER LES YEUX"
+
+#: stand_up_reminder/eyes.py
+msgid "FOLLOW THE LIT DOT"
+msgstr "SUIVEZ LE POINT ALLUMÉ"
+
+#: stand_up_reminder/eyes.py
+msgid "SQUEEZE"
+msgstr "SERREZ"
+
+#: stand_up_reminder/eyes.py
+msgid "LET GO"
+msgstr "RELÂCHEZ"
+
+#: stand_up_reminder/eyes.py
+msgid "REST"
+msgstr "REPOSEZ"
+
+#: stand_up_reminder/eyes.py
+msgid "OPEN"
+msgstr "OUVREZ"
 
 #: stand_up_reminder/pixelui.py
 msgid "Close"
@@ -497,9 +577,6 @@ msgstr "On en prend un peu plus ?"
 #, python-format
 #~ msgid "This week: %s"
 #~ msgstr "Cette semaine : %s"
-
-#~ msgid "No breaks"
-#~ msgstr "Aucune pause"
 
 #~ msgid "No breaks due yet"
 #~ msgstr "Aucune pause attendue pour l'instant"

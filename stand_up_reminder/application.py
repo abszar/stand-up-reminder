@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import sys
 import time
 from dataclasses import dataclass, replace
@@ -21,8 +22,10 @@ try:  # Sound cues are optional; the reminder works without them.
 except (ImportError, ValueError):  # pragma: no cover - depends on host packages
     GSound = None
 
+from . import eyes
 from . import pixels
 from . import pixelui as ui
+from .eyecard import EyeWindow
 from .i18n import _, ngettext
 from .pixels import ART, PALETTE, ap
 from .scheduler import Phase, Scheduler, TimingMode, Transition
@@ -69,6 +72,34 @@ PAUSE_PRESETS = (30 * 60, 60 * 60)
 PILL_EDGE_GAP = 0
 
 
+def sound_dir() -> Path:
+    """Where the shipped sound files live, installed or in the tree."""
+    override = os.environ.get("STAND_UP_REMINDER_SOUNDS")
+    if override:
+        return Path(override)
+    package = Path(__file__).resolve().parent
+    installed = package.parent / "sounds"
+    if installed.is_dir():
+        return installed
+    return package.parent / "data" / "sounds"
+
+
+def sound_player(which=shutil.which) -> str:
+    """A command that can play a shipped WAV where GSound is not installed.
+
+    GSound is an optional dependency and is missing on plenty of desktops, so
+    the cues that ship as files fall back to whatever the system already has.
+    Cues that name a freedesktop event have no file to fall back to and stay
+    silent, which is the right way round: the application's own sounds work
+    everywhere, and the desktop's own sounds need the desktop's own library.
+    """
+    for name in ("paplay", "aplay"):
+        found = which(name)
+        if found:
+            return found
+    return ""
+
+
 @dataclass(frozen=True)
 class SoundCue:
     """One sound the application can make, and the name it answers to.
@@ -77,17 +108,27 @@ class SoundCue:
     application does not declare cannot be played at all. Declaring one here
     is what gives it its own row in the settings, which is why a cue added
     later is switchable without anybody remembering to wire it up.
+
+    A cue names exactly one source: a freedesktop event the desktop theme
+    supplies, or a file shipped with the application.
     """
 
     key: str
     label: str
-    event_id: str
+    event_id: str = ""
+    filename: str = ""
 
 
 SOUND_CUES = (
-    SoundCue("break_start", _("The break starting"), "message-new-instant"),
-    SoundCue("break_done", _("The break finishing"), "complete"),
+    SoundCue("break_start", _("The break starting"), event_id="message-new-instant"),
+    SoundCue("break_done", _("The break finishing"), event_id="complete"),
+    SoundCue("eye_far", _("Look far"), filename="eye-look-far.wav"),
+    SoundCue("eye_shut", _("Close your eyes"), filename="eye-close.wav"),
+    SoundCue("eye_move", _("Move your eyes"), filename="eye-move.wav"),
+    SoundCue("eye_squeeze", _("Each squeeze"), filename="eye-squeeze.wav"),
+    SoundCue("eye_done", _("An eye break ending"), filename="eye-done.wav"),
 )
+EYE_CUES = {cue.key: cue for cue in SOUND_CUES}
 
 
 def sound_allowed(settings, cue: SoundCue) -> bool:
@@ -1612,6 +1653,42 @@ class SettingsPanel(Gtk.Window, ui.PixelFrameWindow):
         ):
             card.pack_start(self._checkbox(key, label, value), False, False, 0)
 
+        # The eye break: its own switch, its own interval, and one row per
+        # prompt, built from the prompt table so a prompt added later shows up.
+        card.pack_start(self._group(_("EYE BREAKS")), False, False, 0)
+        card.pack_start(
+            self._checkbox(
+                "eye_breaks_enabled",
+                _("Rest my eyes on a timer"),
+                settings.eye_breaks_enabled,
+            ),
+            False,
+            False,
+            0,
+        )
+        self.eye_rows = []
+        interval = self._segmented(
+            "eye_interval_seconds",
+            [
+                (_("%d MIN") % (seconds // 60), seconds)
+                for seconds in eyes.INTERVAL_PRESETS
+            ],
+            settings.eye_interval_seconds,
+        )
+        interval.set_margin_start(ap(6))
+        self.eye_rows.append(interval)
+        card.pack_start(interval, False, False, 0)
+        for prompt in eyes.PROMPTS:
+            row = self._checkbox(
+                "prompt:" + prompt.key,
+                prompt.setting_label,
+                prompt.key not in settings.muted_prompts,
+            )
+            row.set_margin_start(ap(6))
+            self.eye_rows.append(row)
+            card.pack_start(row, False, False, 0)
+        self._apply_eye_master(settings.eye_breaks_enabled)
+
         # Sound is one master switch over a list built from the cue registry,
         # so a sound added in a later version arrives with its own row here.
         card.pack_start(self._group(_("SOUND")), False, False, 0)
@@ -1649,7 +1726,31 @@ class SettingsPanel(Gtk.Window, ui.PixelFrameWindow):
         done.connect("clicked", lambda *_args: self.hide())
         card.pack_start(done, False, False, 0)
 
-        self.add(card)
+        # The list is longer than some screens are tall, so it scrolls rather
+        # than running off the bottom with the Done button on it.
+        scroller = Gtk.ScrolledWindow()
+        scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scroller.set_propagate_natural_height(True)
+        scroller.set_max_content_height(self._room_on_screen())
+        scroller.add(card)
+        self.add(scroller)
+
+    @staticmethod
+    def _room_on_screen() -> int:
+        """How tall the panel may grow before it stops fitting."""
+        display = Gdk.Display.get_default()
+        monitor = display.get_primary_monitor() if display else None
+        if monitor is None:
+            return 900
+        return max(480, int(monitor.get_workarea().height * 0.9))
+
+    def apply_eye_master(self, enabled: bool) -> None:
+        """The interval and the prompt list mean nothing with the timer off."""
+        self._apply_eye_master(enabled)
+
+    def _apply_eye_master(self, enabled: bool) -> None:
+        for row in self.eye_rows:
+            row.set_sensitive(bool(enabled))
 
     def apply_sound_master(self, enabled: bool) -> None:
         """The per-cue rows mean nothing while the master switch is off."""
@@ -1710,6 +1811,9 @@ class SettingsPanel(Gtk.Window, ui.PixelFrameWindow):
         )
         text = ui.pixel_label(label, "pixel-prompt", 0.0)
         text.set_line_wrap(True)
+        # A wrapping label asks for the width of its longest word and no more,
+        # so a two-word label breaks in half. A minimum width stops that.
+        text.set_width_chars(26)
         row.pack_start(box, False, False, 0)
         row.pack_start(text, False, False, 0)
         button.add(row)
@@ -1893,6 +1997,7 @@ class ReminderApplication(Gtk.Application):
         self._session_bus = None
         self._lock_subscription = 0
         self._sound = None
+        self._player = ""
         self._stats_day = ""
         self._stats_summary = ""
         self._score_day = ""
@@ -1901,6 +2006,9 @@ class ReminderApplication(Gtk.Application):
         self._idle_credit_pending = False
         self._standing_since: Optional[float] = None
         self._standing_seconds = 0
+        self.eye_card: Optional[EyeWindow] = None
+        self._eye_seconds = 0
+        self._eye_index = 0
         self._clock = time.monotonic
         self._suppress_menu_events = False
         self._wayland = False
@@ -2004,7 +2112,9 @@ class ReminderApplication(Gtk.Application):
         return float(configured if raw is None else float(raw))
 
     def _initialize_sound(self) -> None:
+        self._player = ""
         if GSound is None:
+            self._player = sound_player()
             return
         try:
             context = GSound.Context()
@@ -2090,6 +2200,20 @@ class ReminderApplication(Gtk.Application):
             self._save_settings(sound_enabled=value)
             if self.settings_panel is not None:
                 self.settings_panel.apply_sound_master(value)
+        elif key == "eye_breaks_enabled":
+            self._save_settings(eye_breaks_enabled=value)
+            self._eye_seconds = 0
+            if self.settings_panel is not None:
+                self.settings_panel.apply_eye_master(value)
+        elif key == "eye_interval_seconds":
+            self._save_settings(eye_interval_seconds=value)
+            self._eye_seconds = 0
+        elif key.startswith("prompt:"):
+            self._save_settings(
+                muted_prompts=toggled_mutes(
+                    self.settings.muted_prompts, key[len("prompt:"):], value
+                )
+            )
         elif key.startswith("sound:"):
             self._save_settings(
                 muted_sounds=toggled_mutes(
@@ -2186,6 +2310,7 @@ class ReminderApplication(Gtk.Application):
     def _tick(self) -> bool:
         transition = self.scheduler.advance()
         self._apply_transition(transition)
+        self._advance_eye_clock()
         self._update_interface()
         return GLib.SOURCE_CONTINUE
 
@@ -2225,10 +2350,25 @@ class ReminderApplication(Gtk.Application):
         sound added later is silenced by the master without the author of it
         having to remember anything.
         """
-        if not sound_allowed(self.settings, cue) or self._sound is None:
+        if not sound_allowed(self.settings, cue):
             return
+        if self._sound is None:
+            # No GSound: our own files still play through whatever the system
+            # has. GLib reaps the child, so nothing is left behind.
+            if cue.filename and self._player:
+                GLib.spawn_async(
+                    [self._player, str(sound_dir() / cue.filename)],
+                    flags=GLib.SpawnFlags.SEARCH_PATH,
+                )
+            return
+        if cue.filename:
+            attributes = {
+                GSound.ATTR_MEDIA_FILENAME: str(sound_dir() / cue.filename)
+            }
+        else:
+            attributes = {GSound.ATTR_EVENT_ID: cue.event_id}
         try:
-            self._sound.play_simple({GSound.ATTR_EVENT_ID: cue.event_id}, None)
+            self._sound.play_simple(attributes, None)
         except GLib.Error:  # pragma: no cover - depends on host audio
             pass
 
@@ -2535,6 +2675,46 @@ class ReminderApplication(Gtk.Application):
         self.scheduler.set_standing(False)
         self.scheduler.reset_work_interval()
 
+    def _advance_eye_clock(self) -> None:
+        """Count the eye interval and open a card when one falls due.
+
+        The clock runs on the wall rather than on the work interval, because
+        eye strain does not pause when the break card is up — it is only that
+        a second popup on top of the first teaches you to dismiss both. So a
+        card that lands during a break is held over rather than lost.
+        """
+        settings = self.settings
+        if not settings.eye_breaks_enabled:
+            self._eye_seconds = 0
+            return
+        previous = self._eye_seconds
+        self._eye_seconds = previous + 1
+        if not eyes.eye_due(previous, self._eye_seconds, settings.eye_interval_seconds):
+            return
+        self._eye_seconds = 0
+        self._show_eye_card()
+
+    def _show_eye_card(self) -> None:
+        snapshot = self.scheduler.snapshot()
+        if snapshot.locked or snapshot.phase in (Phase.BREAK, Phase.AWAITING_RETURN):
+            return
+        if self.eye_card is not None and self.eye_card.get_visible():
+            return
+        chosen = eyes.next_prompt(self._eye_index, self.settings.muted_prompts)
+        if chosen is None:
+            return
+        prompt, self._eye_index = chosen
+        if self.eye_card is None:
+            self.eye_card = EyeWindow(self._eye_squeezed, self._eye_finished)
+        self.eye_card.begin(prompt)
+        self._play_sound(EYE_CUES["eye_" + prompt.key])
+
+    def _eye_squeezed(self) -> None:
+        self._play_sound(EYE_CUES["eye_squeeze"])
+
+    def _eye_finished(self) -> None:
+        self._play_sound(EYE_CUES["eye_done"])
+
     def _refresh_standing_pill(self) -> None:
         if self._standing_since is None or self.pill is None:
             return
@@ -2573,6 +2753,8 @@ class ReminderApplication(Gtk.Application):
             dimmer.destroy()
         if self.pill:
             self.pill.destroy()
+        if self.eye_card:
+            self.eye_card.destroy()
         if self.settings_panel:
             self.settings_panel.destroy()
         if self.control_window:
