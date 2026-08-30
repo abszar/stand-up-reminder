@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Stand Up Reminder 1.2.0\n"
 "Report-Msgid-Bugs-To: https://github.com/abszar/stand-up-reminder/issues\n"
-"POT-Creation-Date: 2026-08-30 09:28+0200\n"
+"POT-Creation-Date: 2026-08-30 15:27+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE\n"
@@ -17,6 +17,14 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=INTEGER; plural=EXPRESSION;\n"
+
+#: stand_up_reminder/application.py
+msgid "The break starting"
+msgstr ""
+
+#: stand_up_reminder/application.py
+msgid "The break finishing"
+msgstr ""
 
 #: stand_up_reminder/application.py
 #, python-format
@@ -256,11 +264,15 @@ msgid "Leaving the desk counts as a break"
 msgstr ""
 
 #: stand_up_reminder/application.py
-msgid "Play a sound at each break"
+msgid "Show the countdown in the top bar"
 msgstr ""
 
 #: stand_up_reminder/application.py
-msgid "Show the countdown in the top bar"
+msgid "SOUND"
+msgstr ""
+
+#: stand_up_reminder/application.py
+msgid "Play sounds"
 msgstr ""
 
 #: stand_up_reminder/application.py

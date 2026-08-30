@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Stand Up Reminder 1.2.0\n"
 "Report-Msgid-Bugs-To: https://github.com/abszar/stand-up-reminder/issues\n"
-"POT-Creation-Date: 2026-08-30 09:28+0200\n"
+"POT-Creation-Date: 2026-08-30 15:27+0200\n"
 "PO-Revision-Date: 2026-07-20 23:40+0200\n"
 "Last-Translator: Automatically generated\n"
 "Language-Team: none\n"
@@ -16,6 +16,14 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=(n > 1);\n"
+
+#: stand_up_reminder/application.py
+msgid "The break starting"
+msgstr "Le début de la pause"
+
+#: stand_up_reminder/application.py
+msgid "The break finishing"
+msgstr "La fin de la pause"
 
 #: stand_up_reminder/application.py
 #, python-format
@@ -257,12 +265,16 @@ msgid "Leaving the desk counts as a break"
 msgstr "Quitter le bureau compte comme une pause"
 
 #: stand_up_reminder/application.py
-msgid "Play a sound at each break"
-msgstr "Jouer un son à chaque pause"
-
-#: stand_up_reminder/application.py
 msgid "Show the countdown in the top bar"
 msgstr "Afficher le compte à rebours en haut"
+
+#: stand_up_reminder/application.py
+msgid "SOUND"
+msgstr "SON"
+
+#: stand_up_reminder/application.py
+msgid "Play sounds"
+msgstr "Jouer les sons"
 
 #: stand_up_reminder/application.py
 msgid "AWAY COUNTS AFTER"
@@ -390,6 +402,9 @@ msgstr "La moitié vous a échappé."
 msgid "Let's get more of these."
 msgstr "On en prend un peu plus ?"
 
+#~ msgid "Play a sound at each break"
+#~ msgstr "Jouer un son à chaque pause"
+
 #~ msgid "Sit down and stop this timer"
 #~ msgstr "Se rasseoir et arrêter"
 
@@ -478,12 +493,6 @@ msgstr "On en prend un peu plus ?"
 
 #~ msgid "Count away after"
 #~ msgstr "Compter une absence après"
-
-#, python-format
-#~ msgid "%d break taken"
-#~ msgid_plural "%d breaks taken"
-#~ msgstr[0] "%d pause prise"
-#~ msgstr[1] "%d pauses prises"
 
 #, python-format
 #~ msgid "This week: %s"

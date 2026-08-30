@@ -15,6 +15,7 @@ from stand_up_reminder.application import (
 )
 from stand_up_reminder.pixels import PALETTE
 from stand_up_reminder.scheduler import Phase, Transition
+from stand_up_reminder.settings import Settings
 from stand_up_reminder.stats import DailyStats
 
 
@@ -139,6 +140,61 @@ class StandingCueTests(unittest.TestCase):
     def test_a_clock_that_does_not_advance_owes_nothing(self):
         self.assertIsNone(application.standing_cue(600, 600))
         self.assertIsNone(application.standing_cue(900, 600))
+
+
+class SoundCueTests(unittest.TestCase):
+    def test_every_cue_is_named_once_and_labelled(self):
+        keys = [cue.key for cue in application.SOUND_CUES]
+        self.assertEqual(len(keys), len(set(keys)))
+        for cue in application.SOUND_CUES:
+            with self.subTest(cue.key):
+                self.assertTrue(cue.label)
+                self.assertTrue(cue.event_id)
+
+    def test_the_master_switch_silences_everything(self):
+        settings = Settings(sound_enabled=False)
+        for cue in application.SOUND_CUES:
+            with self.subTest(cue.key):
+                self.assertFalse(application.sound_allowed(settings, cue))
+
+    def test_an_unmuted_cue_plays_while_the_master_is_on(self):
+        settings = Settings(sound_enabled=True)
+        cue = application.SOUND_CUES[0]
+        self.assertTrue(application.sound_allowed(settings, cue))
+
+    def test_a_muted_cue_stays_silent_with_the_master_on(self):
+        cue = application.SOUND_CUES[0]
+        settings = Settings(sound_enabled=True, muted_sounds=frozenset({cue.key}))
+        self.assertFalse(application.sound_allowed(settings, cue))
+
+    def test_a_cue_nobody_has_muted_yet_is_audible(self):
+        later = application.SoundCue("a_cue_added_next_year", "Later", "bell")
+        settings = Settings(sound_enabled=True, muted_sounds=frozenset({"break_done"}))
+        self.assertTrue(application.sound_allowed(settings, later))
+
+    def test_the_panel_lists_one_row_per_cue_in_order(self):
+        settings = Settings(muted_sounds=frozenset({application.SOUND_CUES[0].key}))
+        rows = application.sound_rows(settings)
+        self.assertEqual(
+            [row[0] for row in rows], [cue.key for cue in application.SOUND_CUES]
+        )
+        self.assertFalse(rows[0][2])
+        self.assertTrue(rows[1][2])
+
+    def test_muting_and_unmuting_one_cue_leaves_the_others_alone(self):
+        muted = frozenset({"break_done"})
+        self.assertEqual(
+            application.toggled_mutes(muted, "break_start", False),
+            frozenset({"break_done", "break_start"}),
+        )
+        self.assertEqual(
+            application.toggled_mutes(muted, "break_done", True), frozenset()
+        )
+
+    def test_unmuting_something_already_audible_changes_nothing(self):
+        self.assertEqual(
+            application.toggled_mutes(frozenset(), "break_start", True), frozenset()
+        )
 
 
 class CountdownStateTests(unittest.TestCase):

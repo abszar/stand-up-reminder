@@ -69,6 +69,47 @@ PAUSE_PRESETS = (30 * 60, 60 * 60)
 PILL_EDGE_GAP = 0
 
 
+@dataclass(frozen=True)
+class SoundCue:
+    """One sound the application can make, and the name it answers to.
+
+    Playing a sound takes a cue rather than a bare event id, so a sound the
+    application does not declare cannot be played at all. Declaring one here
+    is what gives it its own row in the settings, which is why a cue added
+    later is switchable without anybody remembering to wire it up.
+    """
+
+    key: str
+    label: str
+    event_id: str
+
+
+SOUND_CUES = (
+    SoundCue("break_start", _("The break starting"), "message-new-instant"),
+    SoundCue("break_done", _("The break finishing"), "complete"),
+)
+
+
+def sound_allowed(settings, cue: SoundCue) -> bool:
+    """Whether this cue may be heard: the master switch, then its own."""
+    return settings.sound_enabled and cue.key not in settings.muted_sounds
+
+
+def sound_rows(settings) -> list:
+    """One settings row per declared cue, in the order they are declared."""
+    return [
+        (cue.key, cue.label, cue.key not in settings.muted_sounds)
+        for cue in SOUND_CUES
+    ]
+
+
+def toggled_mutes(muted, key: str, audible: bool) -> frozenset:
+    """The muted set with one cue switched on or off."""
+    if audible:
+        return frozenset(muted) - {key}
+    return frozenset(muted) | {key}
+
+
 def format_duration(seconds: int) -> str:
     seconds = max(0, int(seconds))
     minutes, remainder = divmod(seconds, 60)
@@ -1563,7 +1604,6 @@ class SettingsPanel(Gtk.Window, ui.PixelFrameWindow):
                 _("Leaving the desk counts as a break"),
                 settings.idle_reset_enabled,
             ),
-            ("sound_enabled", _("Play a sound at each break"), settings.sound_enabled),
             (
                 "show_countdown",
                 _("Show the countdown in the top bar"),
@@ -1571,6 +1611,23 @@ class SettingsPanel(Gtk.Window, ui.PixelFrameWindow):
             ),
         ):
             card.pack_start(self._checkbox(key, label, value), False, False, 0)
+
+        # Sound is one master switch over a list built from the cue registry,
+        # so a sound added in a later version arrives with its own row here.
+        card.pack_start(self._group(_("SOUND")), False, False, 0)
+        card.pack_start(
+            self._checkbox("sound_enabled", _("Play sounds"), settings.sound_enabled),
+            False,
+            False,
+            0,
+        )
+        self.sound_rows = []
+        for key, label, audible in sound_rows(settings):
+            row = self._checkbox("sound:" + key, label, audible)
+            row.set_margin_start(ap(6))
+            self.sound_rows.append(row)
+            card.pack_start(row, False, False, 0)
+        self.apply_sound_master(settings.sound_enabled)
 
         card.pack_start(self._group(_("AWAY COUNTS AFTER")), False, False, 0)
         card.pack_start(
@@ -1593,6 +1650,11 @@ class SettingsPanel(Gtk.Window, ui.PixelFrameWindow):
         card.pack_start(done, False, False, 0)
 
         self.add(card)
+
+    def apply_sound_master(self, enabled: bool) -> None:
+        """The per-cue rows mean nothing while the master switch is off."""
+        for row in self.sound_rows:
+            row.set_sensitive(bool(enabled))
 
     @staticmethod
     def _group(text: str) -> Gtk.Label:
@@ -1849,7 +1911,6 @@ class ReminderApplication(Gtk.Application):
         Gtk.Application.do_startup(self)
         GLib.set_application_name(APP_NAME)
         css = Gtk.CssProvider()
-        css = Gtk.CssProvider()
         css.load_from_data(STYLE_SHEET)
         screen = Gdk.Screen.get_default()
         if screen is None:
@@ -2027,6 +2088,14 @@ class ReminderApplication(Gtk.Application):
             self._save_settings(idle_reset_enabled=value)
         elif key == "sound_enabled":
             self._save_settings(sound_enabled=value)
+            if self.settings_panel is not None:
+                self.settings_panel.apply_sound_master(value)
+        elif key.startswith("sound:"):
+            self._save_settings(
+                muted_sounds=toggled_mutes(
+                    self.settings.muted_sounds, key[len("sound:"):], value
+                )
+            )
         elif key == "show_countdown":
             self._save_settings(show_countdown=value)
         self._update_interface()
@@ -2124,10 +2193,10 @@ class ReminderApplication(Gtk.Application):
         if transition is Transition.WARN_BREAK:
             self._show_warning()
         elif transition is Transition.START_BREAK:
-            self._play_sound("message-new-instant")
+            self._play_sound(SOUND_CUES[0])
             self._show_break()
         elif transition is Transition.BREAK_COMPLETE:
-            self._play_sound("complete")
+            self._play_sound(SOUND_CUES[1])
         elif transition is Transition.END_BREAK and self.window:
             self.window.hide()
             self.window.stop_clock()
@@ -2149,11 +2218,17 @@ class ReminderApplication(Gtk.Application):
         self.window.enforce_front()
         self.window.reveal()
 
-    def _play_sound(self, event_id: str) -> None:
-        if not self.settings.sound_enabled or self._sound is None:
+    def _play_sound(self, cue: SoundCue) -> None:
+        """The one way the application makes a sound.
+
+        Every cue passes both switches here — the master and its own — so a
+        sound added later is silenced by the master without the author of it
+        having to remember anything.
+        """
+        if not sound_allowed(self.settings, cue) or self._sound is None:
             return
         try:
-            self._sound.play_simple({GSound.ATTR_EVENT_ID: event_id}, None)
+            self._sound.play_simple({GSound.ATTR_EVENT_ID: cue.event_id}, None)
         except GLib.Error:  # pragma: no cover - depends on host audio
             pass
 

@@ -11,6 +11,7 @@ from stand_up_reminder.settings import (
     WORK_SECONDS_RANGE,
     Settings,
     SettingsStore,
+    settings_from_payload,
 )
 
 
@@ -71,6 +72,7 @@ class SettingsStoreTests(unittest.TestCase):
             idle_reset_enabled=False,
             show_countdown=False,
             sound_enabled=True,
+            muted_sounds=frozenset({"break_done"}),
             standing_pill_position=0.2,
         )
         self.store.save(saved)
@@ -133,6 +135,29 @@ class SettingsStoreTests(unittest.TestCase):
     def test_corrupt_field_does_not_discard_valid_fields(self):
         self.write({"timing_mode": "wall", "work_seconds": "bogus"})
         self.assertEqual(self.store.load().mode, TimingMode.WALL)
+
+
+class MutedSoundTests(unittest.TestCase):
+    def test_nothing_is_muted_to_begin_with(self):
+        self.assertEqual(Settings().muted_sounds, frozenset())
+
+    def test_a_stored_list_of_keys_is_read_back(self):
+        settings = settings_from_payload({"muted_sounds": ["break_done"]})
+        self.assertEqual(settings.muted_sounds, frozenset({"break_done"}))
+
+    def test_a_value_that_is_not_a_list_of_names_is_ignored(self):
+        self.assertEqual(
+            settings_from_payload({"muted_sounds": "break_done"}).muted_sounds,
+            frozenset(),
+        )
+        self.assertEqual(
+            settings_from_payload({"muted_sounds": [1, None]}).muted_sounds,
+            frozenset(),
+        )
+
+    def test_unknown_names_are_kept_so_a_cue_survives_being_renamed_back(self):
+        settings = settings_from_payload({"muted_sounds": ["not_a_cue_yet"]})
+        self.assertEqual(settings.muted_sounds, frozenset({"not_a_cue_yet"}))
 
 
 if __name__ == "__main__":

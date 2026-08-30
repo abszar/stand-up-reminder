@@ -39,6 +39,10 @@ class Settings:
     idle_reset_enabled: bool = True
     show_countdown: bool = True
     sound_enabled: bool = False
+    # The cues the user has silenced individually, held as the muted set and
+    # not the audible one: a cue added in a later version is then audible by
+    # default, and no settings file written before it existed needs touching.
+    muted_sounds: frozenset = frozenset()
     standing_pill_position: float = DEFAULT_STANDING_PILL_POSITION
 
 
@@ -64,6 +68,18 @@ def _read_fraction(payload: dict, key: str, default: float) -> float:
     if isinstance(raw, bool) or not isinstance(raw, (int, float)):
         return default
     return max(0.0, min(1.0, float(raw)))
+
+
+def _read_names(payload: dict, key: str) -> frozenset:
+    """A stored set of cue names, ignoring anything that is not a list of names.
+
+    Names no longer in the registry are kept rather than dropped, so a cue
+    that is renamed and later renamed back finds its setting still there.
+    """
+    raw = payload.get(key)
+    if not isinstance(raw, list) or not all(isinstance(n, str) for n in raw):
+        return frozenset()
+    return frozenset(raw)
 
 
 def _read_mode(payload: dict) -> TimingMode:
@@ -105,6 +121,7 @@ def settings_from_payload(payload: dict) -> Settings:
         idle_reset_enabled=_read_flag(payload, "idle_reset_enabled", True),
         show_countdown=_read_flag(payload, "show_countdown", True),
         sound_enabled=_read_flag(payload, "sound_enabled", False),
+        muted_sounds=_read_names(payload, "muted_sounds"),
         standing_pill_position=_read_fraction(
             payload, "standing_pill_position", DEFAULT_STANDING_PILL_POSITION
         ),
@@ -132,6 +149,7 @@ class SettingsStore:
     def save(self, settings: Settings) -> None:
         payload = asdict(settings)
         payload["timing_mode"] = payload.pop("mode").value
+        payload["muted_sounds"] = sorted(payload["muted_sounds"])
         self.path.parent.mkdir(parents=True, exist_ok=True)
         temporary = self.path.with_suffix(".tmp")
         try:
