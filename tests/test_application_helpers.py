@@ -287,35 +287,56 @@ class DiscreetModeTests(unittest.TestCase):
 
 class EyeClockTests(unittest.TestCase):
     def make_app(self, **settings_kwargs):
-        settings = Settings(**settings_kwargs)
+        self.now = 1000.0
         return SimpleNamespace(
-            settings=settings,
+            settings=Settings(**settings_kwargs),
             scheduler=Mock(),
             eye_card=None,
             _eye_seconds=0,
-            _eye_index=0,
+            _eye_anchor=1000.0,
+            _clock=lambda: self.now,
             _show_eye_card=Mock(),
         )
+
+    def advance(self, app, seconds, ticks_per_second=4):
+        """Tick as the application really does — four times a second."""
+        for _ in range(int(seconds * ticks_per_second)):
+            self.now += 1.0 / ticks_per_second
+            application.ReminderApplication._advance_eye_clock(app)
 
     def test_the_clock_stands_still_while_the_feature_is_off(self):
         app = self.make_app(eye_breaks_enabled=False)
         app._eye_seconds = 500
-        application.ReminderApplication._advance_eye_clock(app)
+        self.advance(app, 60)
         self.assertEqual(app._eye_seconds, 0)
         app._show_eye_card.assert_not_called()
 
-    def test_the_clock_counts_up_between_cards(self):
+    def test_the_clock_counts_real_seconds_and_not_ticks(self):
         app = self.make_app(eye_interval_seconds=1200)
-        application.ReminderApplication._advance_eye_clock(app)
-        self.assertEqual(app._eye_seconds, 1)
+        self.advance(app, 30)
+        self.assertEqual(app._eye_seconds, 30)
+
+    def test_nothing_is_due_before_the_interval_has_really_passed(self):
+        app = self.make_app(eye_interval_seconds=1200)
+        self.advance(app, 1199)
         app._show_eye_card.assert_not_called()
 
     def test_a_card_opens_on_the_interval_and_the_clock_restarts(self):
         app = self.make_app(eye_interval_seconds=1200)
-        app._eye_seconds = 1199
-        application.ReminderApplication._advance_eye_clock(app)
+        self.advance(app, 1200)
         app._show_eye_card.assert_called_once_with()
         self.assertEqual(app._eye_seconds, 0)
+
+    def test_two_cards_are_a_whole_interval_apart(self):
+        app = self.make_app(eye_interval_seconds=1200)
+        self.advance(app, 2400)
+        self.assertEqual(app._show_eye_card.call_count, 2)
+
+    def test_time_lost_to_a_suspend_still_owes_its_card(self):
+        app = self.make_app(eye_interval_seconds=1200)
+        self.now += 5000
+        application.ReminderApplication._advance_eye_clock(app)
+        app._show_eye_card.assert_called_once_with()
 
 
 class EyeCardTests(unittest.TestCase):

@@ -2203,8 +2203,9 @@ class ReminderApplication(Gtk.Application):
         self.discreet = False
         self.dock: Optional[DockCard] = None
         self.eye_card: Optional[EyeWindow] = None
-        self._eye_seconds = 0
         self._clock = time.monotonic
+        self._eye_seconds = 0
+        self._eye_anchor = self._clock()
         self._suppress_menu_events = False
         self._wayland = False
         self._started = False
@@ -2430,11 +2431,13 @@ class ReminderApplication(Gtk.Application):
         elif key == "eye_breaks_enabled":
             self._save_settings(eye_breaks_enabled=value)
             self._eye_seconds = 0
+            self._eye_anchor = self._clock()
             if self.settings_panel is not None:
                 self.settings_panel.apply_eye_master(value)
         elif key == "eye_interval_seconds":
             self._save_settings(eye_interval_seconds=value)
             self._eye_seconds = 0
+            self._eye_anchor = self._clock()
         elif key.startswith("prompt:"):
             self._save_settings(
                 muted_prompts=toggled_mutes(
@@ -2948,12 +2951,18 @@ class ReminderApplication(Gtk.Application):
         settings = self.settings
         if not settings.eye_breaks_enabled:
             self._eye_seconds = 0
+            self._eye_anchor = self._clock()
             return
+        # Measured against the clock, not counted in ticks: the tick is four
+        # times a second, and treating each one as a second ran the whole
+        # interval four times too fast.
+        now = self._clock()
         previous = self._eye_seconds
-        self._eye_seconds = previous + 1
+        self._eye_seconds = max(0, int(now - self._eye_anchor))
         if not eyes.eye_due(previous, self._eye_seconds, settings.eye_interval_seconds):
             return
         self._eye_seconds = 0
+        self._eye_anchor = now
         self._show_eye_card()
 
     def _show_eye_card(self) -> None:
