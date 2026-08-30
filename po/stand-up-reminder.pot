@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Stand Up Reminder 1.2.0\n"
 "Report-Msgid-Bugs-To: https://github.com/abszar/stand-up-reminder/issues\n"
-"POT-Creation-Date: 2026-08-30 15:41+0200\n"
+"POT-Creation-Date: 2026-08-30 16:09+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE\n"
@@ -24,6 +24,10 @@ msgstr ""
 
 #: stand_up_reminder/application.py
 msgid "The break finishing"
+msgstr ""
+
+#: stand_up_reminder/application.py
+msgid "A break kept"
 msgstr ""
 
 #: stand_up_reminder/application.py
@@ -162,6 +166,27 @@ msgstr ""
 
 #: stand_up_reminder/application.py
 msgid "Sit down — restarts the work timer"
+msgstr ""
+
+#: stand_up_reminder/application.py
+msgid "I'M STANDING"
+msgstr ""
+
+#: stand_up_reminder/application.py
+msgid "I'M BACK"
+msgstr ""
+
+#: stand_up_reminder/application.py
+#, python-format
+msgid "+%d MIN"
+msgstr ""
+
+#: stand_up_reminder/application.py
+msgid "SKIP"
+msgstr ""
+
+#: stand_up_reminder/application.py
+msgid "I MISSED IT"
 msgstr ""
 
 #: stand_up_reminder/application.py
@@ -309,6 +334,10 @@ msgid "Play sounds"
 msgstr ""
 
 #: stand_up_reminder/application.py
+msgid "WHICH SOUNDS"
+msgstr ""
+
+#: stand_up_reminder/application.py
 msgid "AWAY COUNTS AFTER"
 msgstr ""
 
@@ -351,6 +380,10 @@ msgstr ""
 
 #: stand_up_reminder/application.py
 msgid "Next break in 30:00"
+msgstr ""
+
+#: stand_up_reminder/application.py
+msgid "Discreet mode"
 msgstr ""
 
 #: stand_up_reminder/application.py

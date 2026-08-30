@@ -120,8 +120,9 @@ class SoundCue:
 
 
 SOUND_CUES = (
-    SoundCue("break_start", _("The break starting"), event_id="message-new-instant"),
-    SoundCue("break_done", _("The break finishing"), event_id="complete"),
+    SoundCue("break_start", _("The break starting"), filename="break-due.wav"),
+    SoundCue("break_done", _("The break finishing"), filename="break-over.wav"),
+    SoundCue("break_kept", _("A break kept"), filename="break-kept.wav"),
     SoundCue("eye_far", _("Look far"), filename="eye-look-far.wav"),
     SoundCue("eye_shut", _("Close your eyes"), filename="eye-close.wav"),
     SoundCue("eye_move", _("Move your eyes"), filename="eye-move.wav"),
@@ -131,8 +132,15 @@ SOUND_CUES = (
 EYE_CUES = {cue.key: cue for cue in SOUND_CUES}
 
 
-def sound_allowed(settings, cue: SoundCue) -> bool:
-    """Whether this cue may be heard: the master switch, then its own."""
+def sound_allowed(settings, cue: SoundCue, discreet: bool = False) -> bool:
+    """Whether this cue may be heard: discreet mode, the master, then its own.
+
+    Discreet comes first and answers for every cue at once. It is a lid over
+    the settings rather than part of them: nothing the user has configured is
+    changed or needs restoring when it comes off.
+    """
+    if discreet:
+        return False
     return settings.sound_enabled and cue.key not in settings.muted_sounds
 
 
@@ -431,6 +439,11 @@ window.pixel-window {
     color: #4a3f66;
     font-size: 16px;
     letter-spacing: 2px;
+}
+.pixel-dock-title {
+    color: #ffb03a;
+    font-size: 16px;
+    letter-spacing: 1px;
 }
 .pixel-caption {
     color: #9a8fb5;
@@ -992,6 +1005,146 @@ class StandingPill(Gtk.Window):
         self.queue_draw()
         self._on_move(self._fraction)
         return True
+
+
+class DockCard(Gtk.Window, ui.PixelFrameWindow):
+    """The break in the bottom right corner: what is asked, and what to press.
+
+    Discreet mode exists for the minutes somebody else is watching the
+    screen, so this carries the count and the three buttons and nothing that
+    is merely nice to see. It never dims, never takes focus, and never moves
+    itself into the middle of anything.
+    """
+
+    # Wide enough for the longest button label, so the card never changes
+    # size when the phase changes under it.
+    WIDTH = ap(54)
+    EDGE_GAP = ap(3)
+    SLIDE = (ap(9), ap(6), ap(3), 0)
+
+    def __init__(self, on_snooze, on_skip, on_return, on_miss, on_stand) -> None:
+        super().__init__(type=Gtk.WindowType.TOPLEVEL, title=APP_NAME)
+        self._phase = Phase.BREAK
+        self.break_seconds = 2 * 60
+        self.warning_seconds = 0
+        self.set_default_size(self.WIDTH, -1)
+        self.set_size_request(self.WIDTH, -1)
+        self.set_resizable(False)
+        self.set_decorated(False)
+        self.set_skip_taskbar_hint(True)
+        self.set_skip_pager_hint(True)
+        self.set_type_hint(Gdk.WindowTypeHint.UTILITY)
+        self.set_keep_above(True)
+        self.get_style_context().add_class("pixel-window")
+        self.setup_frame()
+        self.set_frame_colors(PALETTE["amber"], PALETTE["ink"])
+        self.connect("delete-event", lambda *_args: True)
+
+        card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        card.set_border_width(ap(2) + ap(2))
+
+        self.title = ui.pixel_label("", "pixel-dock-title", 0.0)
+        card.pack_start(self.title, False, False, 0)
+        self.secondary = ui.pixel_label("", "pixel-hint", 0.0)
+        self.secondary.set_margin_bottom(ap(2))
+        card.pack_start(self.secondary, False, False, 0)
+
+        self.clock = ui.SpriteDigits(scale=ART, big=True)
+        self.clock.set_halign(Gtk.Align.CENTER)
+        self.clock.set_margin_bottom(ap(2))
+        card.pack_start(self.clock, False, False, 0)
+
+        self.progress = ui.CellBar()
+        self.progress.set_margin_bottom(ap(3))
+        card.pack_start(self.progress, False, False, 0)
+
+        # Stacked rather than in a row: at this width three labels side by
+        # side would get eleven art pixels each, and the longest does not fit.
+        self.stand_button = ui.pixel_button(_("I'M STANDING"), "standing")
+        self.stand_button.connect("clicked", on_stand)
+        self.return_button = ui.pixel_button(_("I'M BACK"), "primary")
+        self.return_button.connect("clicked", on_return)
+        self.snooze_button = ui.pixel_button(_("+%d MIN") % 5)
+        self.snooze_button.connect("clicked", on_snooze)
+        self.skip_button = ui.pixel_button(_("SKIP"))
+        self.skip_button.connect("clicked", on_skip)
+        self.miss_button = ui.pixel_button(_("I MISSED IT"), "danger")
+        self.miss_button.connect("clicked", on_miss)
+        for button in (
+            self.stand_button,
+            self.return_button,
+            self.snooze_button,
+            self.skip_button,
+            self.miss_button,
+        ):
+            button.set_no_show_all(True)
+            button.set_margin_top(ART)
+            card.pack_start(button, False, False, 0)
+
+        self.add(card)
+
+    def set_snooze_seconds(self, seconds: int) -> None:
+        self.snooze_button.set_label(_("+%d MIN") % max(1, seconds // 60))
+
+    def set_break_seconds(self, seconds: int) -> None:
+        self.break_seconds = max(1, int(seconds))
+
+    def set_warning_seconds(self, seconds: int) -> None:
+        self.warning_seconds = max(0, int(seconds))
+
+    def update_state(
+        self, phase: Phase, seconds_remaining: int, away_seconds: int
+    ) -> None:
+        view = break_view(phase, seconds_remaining, away_seconds)
+        self._phase = phase
+        self.title.set_text(view.title)
+        self.secondary.set_text(view.secondary)
+        urgent = is_urgent(seconds_remaining) and phase is Phase.BREAK
+        self.clock.set_text(
+            view.countdown, PALETTE["coral"] if urgent else PALETTE["bone"]
+        )
+        total = self.warning_seconds if phase is Phase.WORK else self.break_seconds
+        self.progress.set_accent(PALETTE["amber"])
+        self.progress.set_filled(pixels.filled_cells(seconds_remaining, total))
+        self.stand_button.set_visible(view.can_stand and not view.can_return)
+        self.return_button.set_visible(view.can_return)
+        self.snooze_button.set_visible(view.can_snooze)
+        self.skip_button.set_visible(view.can_skip)
+        self.miss_button.set_visible(view.can_miss)
+
+    def reveal(self, pill_height: int = 0) -> None:
+        if self.get_visible():
+            return
+        self.show_all()
+        self._place(pill_height, self.SLIDE[0] if ui.animations_enabled() else 0)
+        self.present()
+        if ui.animations_enabled():
+            self._slide_up(pill_height)
+
+    def _slide_up(self, pill_height: int) -> None:
+        steps = list(self.SLIDE[1:])
+
+        def step() -> bool:
+            self._place(pill_height, steps.pop(0))
+            return GLib.SOURCE_CONTINUE if steps else GLib.SOURCE_REMOVE
+
+        GLib.timeout_add(40, step)
+
+    def _place(self, pill_height: int = 0, drop: int = 0) -> None:
+        """The bottom right corner, stepping left of a pill parked in it."""
+        display = Gdk.Display.get_default()
+        monitor = display.get_primary_monitor() if display else None
+        if monitor is None:
+            return
+        area = monitor.get_workarea()
+        width, height = self.get_size()
+        # The pill is pinned to the right edge and can be dragged low enough
+        # to sit in this corner; where it would, the card steps left of it.
+        clearance = StandingPill.WIDTH + PILL_EDGE_GAP + ap(2) if pill_height else 0
+        self.move(
+            area.x + area.width - width - self.EDGE_GAP - clearance,
+            area.y + area.height - height - self.EDGE_GAP + drop,
+        )
 
 
 class DimmerWindow(Gtk.Window):
@@ -1691,6 +1844,7 @@ class SettingsPanel(Gtk.Window, ui.PixelFrameWindow):
 
         # Sound is one master switch over a list built from the cue registry,
         # so a sound added in a later version arrives with its own row here.
+        # The list itself folds away: it is set once and grows every release.
         card.pack_start(self._group(_("SOUND")), False, False, 0)
         card.pack_start(
             self._checkbox("sound_enabled", _("Play sounds"), settings.sound_enabled),
@@ -1698,12 +1852,16 @@ class SettingsPanel(Gtk.Window, ui.PixelFrameWindow):
             False,
             0,
         )
-        self.sound_rows = []
+        header, body = self._fold(_("WHICH SOUNDS"))
+        header.set_margin_start(ap(6))
+        card.pack_start(header, False, False, 0)
+        self.sound_rows = [header]
         for key, label, audible in sound_rows(settings):
             row = self._checkbox("sound:" + key, label, audible)
-            row.set_margin_start(ap(6))
+            row.set_margin_start(ap(12))
             self.sound_rows.append(row)
-            card.pack_start(row, False, False, 0)
+            body.pack_start(row, False, False, 0)
+        card.pack_start(body, False, False, 0)
         self.apply_sound_master(settings.sound_enabled)
 
         card.pack_start(self._group(_("AWAY COUNTS AFTER")), False, False, 0)
@@ -1756,6 +1914,40 @@ class SettingsPanel(Gtk.Window, ui.PixelFrameWindow):
         """The per-cue rows mean nothing while the master switch is off."""
         for row in self.sound_rows:
             row.set_sensitive(bool(enabled))
+
+    def _fold(self, title: str, open_at_first: bool = False):
+        """A caption that opens and shuts the rows beneath it.
+
+        The sound list is one row per declared cue, so it grows every time a
+        sound is added and pushes everything under it off the panel. Folded
+        away it costs one line, which is what a list you set once and forget
+        should cost.
+        """
+        header = Gtk.Button()
+        header.get_style_context().add_class("pixel-check")
+        header.set_relief(Gtk.ReliefStyle.NONE)
+        header.set_margin_top(ap(8))
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=ap(2))
+        mark = ui.FoldMark(open_at_first)
+        mark.set_valign(Gtk.Align.CENTER)
+        row.pack_start(mark, False, False, 0)
+        row.pack_start(ui.pixel_label(title, "pixel-caption", 0.0), False, False, 0)
+        header.add(row)
+
+        body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        body.set_no_show_all(not open_at_first)
+        body.set_visible(open_at_first)
+
+        def toggle(_button) -> None:
+            shown = not body.get_visible()
+            body.set_no_show_all(not shown)
+            body.set_visible(shown)
+            if shown:
+                body.show_all()
+            mark.set_open(shown)
+
+        header.connect("clicked", toggle)
+        return header, body
 
     @staticmethod
     def _group(text: str) -> Gtk.Label:
@@ -2006,6 +2198,10 @@ class ReminderApplication(Gtk.Application):
         self._idle_credit_pending = False
         self._standing_since: Optional[float] = None
         self._standing_seconds = 0
+        # Discreet is deliberately not saved: it is switched on for a
+        # meeting, and being silently muted for a week is the worse bug.
+        self.discreet = False
+        self.dock: Optional[DockCard] = None
         self.eye_card: Optional[EyeWindow] = None
         self._eye_seconds = 0
         self._eye_index = 0
@@ -2149,11 +2345,43 @@ class ReminderApplication(Gtk.Application):
         menu.append(self.stats_item)
         menu.append(Gtk.SeparatorMenuItem())
 
+        # The one action that belongs in the menu rather than the control
+        # window: it is reached while somebody is already looking at the
+        # screen, so opening a window on the way would defeat it.
+        self.discreet_item = Gtk.CheckMenuItem(label=_("Discreet mode"))
+        self.discreet_item.set_active(False)
+        self.discreet_item.connect("toggled", self._toggle_discreet)
+        menu.append(self.discreet_item)
+        menu.append(Gtk.SeparatorMenuItem())
+
         open_item = Gtk.MenuItem(label=_("Open Stand Up Reminder"))
         open_item.connect("activate", self._open_control_window)
         menu.append(open_item)
         menu.show_all()
         self.indicator.set_menu(menu)
+
+    def _toggle_discreet(self, item) -> None:
+        """Move the reminders out of the way without changing any setting."""
+        self.discreet = bool(item.get_active())
+        if self.discreet:
+            if self.eye_card is not None:
+                self.eye_card.finish()
+            self._hide_dimmers()
+        # A break already on screen moves to the other surface rather than
+        # waiting for the next one.
+        snapshot = self.scheduler.snapshot()
+        if snapshot.phase in (Phase.BREAK, Phase.AWAITING_RETURN):
+            self._close_break_surfaces()
+            self._show_break()
+        self._update_interface()
+
+    def _close_break_surfaces(self) -> None:
+        if self.window is not None:
+            self.window.hide()
+            self.window.stop_clock()
+        if self.dock is not None:
+            self.dock.hide()
+        self._hide_dimmers()
 
     def _open_control_window(self, _item) -> None:
         if self.control_window is None:
@@ -2322,10 +2550,8 @@ class ReminderApplication(Gtk.Application):
             self._show_break()
         elif transition is Transition.BREAK_COMPLETE:
             self._play_sound(SOUND_CUES[1])
-        elif transition is Transition.END_BREAK and self.window:
-            self.window.hide()
-            self.window.stop_clock()
-            self._hide_dimmers()
+        elif transition is Transition.END_BREAK:
+            self._close_break_surfaces()
 
     def _show_warning(self) -> None:
         """Open the break window early, counting down to the break itself."""
@@ -2350,7 +2576,7 @@ class ReminderApplication(Gtk.Application):
         sound added later is silenced by the master without the author of it
         having to remember anything.
         """
-        if not sound_allowed(self.settings, cue):
+        if not sound_allowed(self.settings, cue, self.discreet):
             return
         if self._sound is None:
             # No GSound: our own files still play through whatever the system
@@ -2376,6 +2602,9 @@ class ReminderApplication(Gtk.Application):
         snapshot = self.scheduler.snapshot()
         if snapshot.locked:
             return
+        if self.discreet:
+            self._show_dock(snapshot)
+            return
         self._refresh_score_line()
         self.window.update_state(
             snapshot.phase,
@@ -2388,6 +2617,30 @@ class ReminderApplication(Gtk.Application):
         # The break window has to be realized before GDK can report which
         # monitor it landed on.
         self._show_dimmers()
+
+    def _show_dock(self, snapshot) -> None:
+        """The break, docked in the corner: no dimmer, no focus, no fanfare."""
+        if self.dock is None:
+            self.dock = DockCard(
+                self._snooze_break,
+                self._skip_break,
+                self._confirm_return,
+                self._missed_break,
+                self._stand_up,
+            )
+        self.dock.set_snooze_seconds(int(self.scheduler.snooze_seconds))
+        self.dock.set_break_seconds(int(self.scheduler.break_seconds))
+        self.dock.set_warning_seconds(int(self.scheduler.warning_seconds))
+        self.dock.update_state(
+            snapshot.phase, snapshot.seconds_remaining, snapshot.away_seconds
+        )
+        self.dock.reveal(self._pill_bottom())
+
+    def _pill_bottom(self) -> int:
+        """How far up the corner is already taken by the standing pill."""
+        if self.pill is None or not self.pill.get_visible():
+            return 0
+        return self.pill.get_size()[0]
 
     def _show_dimmers(self) -> None:
         """Cover the monitors that do not hold the break card."""
@@ -2493,6 +2746,7 @@ class ReminderApplication(Gtk.Application):
                 self.window.stop_clock()
                 self._hide_dimmers()
 
+        self._refresh_dock()
         self._refresh_standing_pill()
 
     def _record_outcome(self, outcome: BreakOutcome) -> None:
@@ -2582,6 +2836,10 @@ class ReminderApplication(Gtk.Application):
         transition = self.scheduler.confirm_return()
         if transition is Transition.END_BREAK:
             self._record_outcome(BreakOutcome.TAKEN)
+            self._play_sound(EYE_CUES["break_kept"])
+            if self.discreet:
+                self._close_card(transition)
+                return
             # The burst plays over the button and the new mark writes onto
             # the day track before the card goes.
             self.window.play_confirm(lambda: self._close_card(transition))
@@ -2594,6 +2852,9 @@ class ReminderApplication(Gtk.Application):
         transition = self.scheduler.confirm_return()
         if transition is Transition.END_BREAK:
             self._record_outcome(BreakOutcome.MISSED)
+            if self.discreet:
+                self._close_card(transition)
+                return
             self.window.play_missed(lambda: self._close_card(transition))
             self._update_interface()
             return
@@ -2607,15 +2868,13 @@ class ReminderApplication(Gtk.Application):
     def _snooze_break(self, _button) -> None:
         if self.scheduler.snooze_break():
             self._record_outcome(BreakOutcome.SNOOZED)
-            self.window.hide()
-            self._hide_dimmers()
+            self._close_break_surfaces()
         self._update_interface()
 
     def _skip_break(self, _button) -> None:
         if self.scheduler.skip_break():
             self._record_outcome(BreakOutcome.SKIPPED)
-            self.window.hide()
-            self._hide_dimmers()
+            self._close_break_surfaces()
         self._update_interface()
 
     def _stand_up(self, _button) -> None:
@@ -2670,6 +2929,10 @@ class ReminderApplication(Gtk.Application):
         """
         if self.pill is not None:
             self.pill.hide()
+        if self._standing_since is not None:
+            # Sitting down after a stand is the same event as saying you are
+            # back from a break, so it earns the same fanfare.
+            self._play_sound(EYE_CUES["break_kept"])
         self._standing_since = None
         self._standing_seconds = 0
         self.scheduler.set_standing(False)
@@ -2695,6 +2958,8 @@ class ReminderApplication(Gtk.Application):
         self._show_eye_card()
 
     def _show_eye_card(self) -> None:
+        if self.discreet:
+            return
         snapshot = self.scheduler.snapshot()
         if snapshot.locked or snapshot.phase in (Phase.BREAK, Phase.AWAITING_RETURN):
             return
@@ -2714,6 +2979,14 @@ class ReminderApplication(Gtk.Application):
 
     def _eye_finished(self) -> None:
         self._play_sound(EYE_CUES["eye_done"])
+
+    def _refresh_dock(self) -> None:
+        if self.dock is None or not self.dock.get_visible():
+            return
+        snapshot = self.scheduler.snapshot()
+        self.dock.update_state(
+            snapshot.phase, snapshot.seconds_remaining, snapshot.away_seconds
+        )
 
     def _refresh_standing_pill(self) -> None:
         if self._standing_since is None or self.pill is None:
@@ -2753,6 +3026,8 @@ class ReminderApplication(Gtk.Application):
             dimmer.destroy()
         if self.pill:
             self.pill.destroy()
+        if self.dock:
+            self.dock.destroy()
         if self.eye_card:
             self.eye_card.destroy()
         if self.settings_panel:

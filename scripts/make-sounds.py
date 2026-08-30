@@ -21,6 +21,14 @@ EDGE = 0.004  # seconds of ramp at each end, enough to kill the click
 
 # name -> (waveform, peak amplitude, [(hertz, milliseconds), ...])
 CUES = {
+    # The break: a knock, then a settle. No other cue repeats a note, which
+    # is what makes the first one identifiable from across a room.
+    "break-due": ("square", 0.11, [(523.25, 90), (523.25, 90), (783.99, 220)]),
+    "break-over": ("triangle", 0.09, [(783.99, 150), (659.25, 260)]),
+    # The only reward in the set, so the only one allowed to be a fanfare.
+    "break-kept": ("square", 0.11, [
+        (392.00, 70), (523.25, 70), (659.25, 70), (783.99, 70), (1046.50, 300),
+    ]),
     "eye-look-far": ("square", 0.09, [(523.25, 70), (659.25, 70), (783.99, 70), (1046.50, 120)]),
     "eye-close": ("triangle", 0.12, [(392.00, 180), (293.66, 260)]),
     "eye-move": ("square", 0.07, [(440.00, 80), (587.33, 120)]),

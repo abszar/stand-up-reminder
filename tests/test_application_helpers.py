@@ -231,6 +231,60 @@ class SoundPlayerTests(unittest.TestCase):
         self.assertEqual(application.sound_player(lambda _name: None), "")
 
 
+class DiscreetModeTests(unittest.TestCase):
+    def test_discreet_silences_every_cue_whatever_the_settings_say(self):
+        settings = Settings(sound_enabled=True)
+        for cue in application.SOUND_CUES:
+            with self.subTest(cue.key):
+                self.assertTrue(application.sound_allowed(settings, cue))
+                self.assertFalse(application.sound_allowed(settings, cue, True))
+
+    def test_discreet_holds_the_eye_cards_back(self):
+        app = SimpleNamespace(
+            settings=Settings(),
+            scheduler=Mock(),
+            discreet=True,
+            eye_card=Mock(),
+            _eye_index=0,
+            _play_sound=Mock(),
+        )
+        application.ReminderApplication._show_eye_card(app)
+        app.eye_card.begin.assert_not_called()
+
+    def test_a_break_shows_the_dock_instead_of_the_card(self):
+        app = SimpleNamespace(
+            scheduler=Mock(),
+            discreet=True,
+            window=Mock(),
+            _show_dock=Mock(),
+            _show_dimmers=Mock(),
+            _refresh_score_line=Mock(),
+        )
+        app.scheduler.snapshot.return_value = SimpleNamespace(
+            locked=False, phase=Phase.BREAK, seconds_remaining=90, away_seconds=0
+        )
+        application.ReminderApplication._show_break(app)
+        app._show_dock.assert_called_once_with(app.scheduler.snapshot.return_value)
+        app.window.show_all.assert_not_called()
+        app._show_dimmers.assert_not_called()
+
+    def test_the_full_card_still_dims_the_screen(self):
+        app = SimpleNamespace(
+            scheduler=Mock(),
+            discreet=False,
+            window=Mock(),
+            _show_dock=Mock(),
+            _show_dimmers=Mock(),
+            _refresh_score_line=Mock(),
+        )
+        app.scheduler.snapshot.return_value = SimpleNamespace(
+            locked=False, phase=Phase.BREAK, seconds_remaining=90, away_seconds=0
+        )
+        application.ReminderApplication._show_break(app)
+        app._show_dock.assert_not_called()
+        app._show_dimmers.assert_called_once_with()
+
+
 class EyeClockTests(unittest.TestCase):
     def make_app(self, **settings_kwargs):
         settings = Settings(**settings_kwargs)
@@ -269,6 +323,7 @@ class EyeCardTests(unittest.TestCase):
         app = SimpleNamespace(
             settings=Settings(**settings_kwargs),
             scheduler=Mock(),
+            discreet=False,
             eye_card=Mock(),
             _eye_index=0,
             _play_sound=Mock(),
@@ -544,6 +599,7 @@ class BreakActionCoordinatorTests(unittest.TestCase):
             _update_interface=Mock(),
             _record_outcome=Mock(),
             _hide_dimmers=Mock(),
+            _close_break_surfaces=Mock(),
         )
 
     def test_successful_snooze_hides_popup_and_refreshes(self):
@@ -552,7 +608,7 @@ class BreakActionCoordinatorTests(unittest.TestCase):
 
         application.ReminderApplication._snooze_break(coordinator, None)
 
-        coordinator.window.hide.assert_called_once_with()
+        coordinator._close_break_surfaces.assert_called_once_with()
         coordinator._update_interface.assert_called_once_with()
 
     def test_rejected_snooze_keeps_popup_visible_and_refreshes(self):
@@ -561,7 +617,7 @@ class BreakActionCoordinatorTests(unittest.TestCase):
 
         application.ReminderApplication._snooze_break(coordinator, None)
 
-        coordinator.window.hide.assert_not_called()
+        coordinator._close_break_surfaces.assert_not_called()
         coordinator._update_interface.assert_called_once_with()
 
     def test_successful_skip_hides_popup_and_refreshes(self):
@@ -570,7 +626,7 @@ class BreakActionCoordinatorTests(unittest.TestCase):
 
         application.ReminderApplication._skip_break(coordinator, None)
 
-        coordinator.window.hide.assert_called_once_with()
+        coordinator._close_break_surfaces.assert_called_once_with()
         coordinator._update_interface.assert_called_once_with()
 
     def test_rejected_skip_keeps_popup_visible_and_refreshes(self):
@@ -579,7 +635,7 @@ class BreakActionCoordinatorTests(unittest.TestCase):
 
         application.ReminderApplication._skip_break(coordinator, None)
 
-        coordinator.window.hide.assert_not_called()
+        coordinator._close_break_surfaces.assert_not_called()
         coordinator._update_interface.assert_called_once_with()
 
     def test_snooze_and_skip_are_counted_separately(self):
@@ -615,6 +671,8 @@ class StandingCoordinatorTests(unittest.TestCase):
             stats=Mock(),
             pill=Mock(),
             _standing_since=None,
+            _standing_seconds=0,
+            _play_sound=Mock(),
             _update_interface=Mock(),
             _record_outcome=Mock(),
             _apply_transition=Mock(),
@@ -673,6 +731,26 @@ class StandingCoordinatorTests(unittest.TestCase):
 
         coordinator.pill.hide.assert_called_once_with()
         self.assertIsNone(coordinator._standing_since)
+
+    def test_sitting_down_sounds_the_fanfare(self):
+        coordinator = self.make_coordinator()
+        coordinator._standing_since = 100.0
+        coordinator._play_sound = Mock()
+
+        application.ReminderApplication._stop_standing(coordinator)
+
+        coordinator._play_sound.assert_called_once_with(
+            application.EYE_CUES["break_kept"]
+        )
+
+    def test_closing_a_pill_that_was_not_running_stays_quiet(self):
+        coordinator = self.make_coordinator()
+        coordinator._standing_since = None
+        coordinator._play_sound = Mock()
+
+        application.ReminderApplication._stop_standing(coordinator)
+
+        coordinator._play_sound.assert_not_called()
 
     def test_sitting_down_restarts_the_work_interval(self):
         coordinator = self.make_coordinator()

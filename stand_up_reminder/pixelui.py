@@ -560,6 +560,45 @@ def pixel_button(label: str, variant: str = "default") -> Gtk.Button:
     return button
 
 
+class FoldMark(Gtk.DrawingArea):
+    """A hard pixel triangle: pointing right when shut, down when open."""
+
+    def __init__(self, is_open: bool = False, scale: int = ART) -> None:
+        super().__init__()
+        self._scale = scale
+        self._open = bool(is_open)
+        self._color = PALETTE["mist"]
+        self.set_size_request(6 * scale, 6 * scale)
+        self.connect("draw", self._on_draw)
+
+    def set_open(self, is_open: bool) -> None:
+        if bool(is_open) == self._open:
+            return
+        self._open = bool(is_open)
+        self.queue_draw()
+
+    def _on_draw(self, _area, context) -> bool:
+        context.set_source_rgb(*rgb(self._color))
+        for step in range(3):
+            if self._open:
+                # A wedge narrowing downward: 5 wide, then 3, then 1.
+                context.rectangle(
+                    (1 + step) * self._scale,
+                    (2 + step) * self._scale,
+                    (5 - 2 * step) * self._scale,
+                    self._scale,
+                )
+            else:
+                context.rectangle(
+                    (2 + step) * self._scale,
+                    (1 + step) * self._scale,
+                    self._scale,
+                    (5 - 2 * step) * self._scale,
+                )
+        context.fill()
+        return False
+
+
 class CloseMark(Gtk.DrawingArea):
     """The window's close mark: a hard pixel cross, drawn on the art grid."""
 
