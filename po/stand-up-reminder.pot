@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Stand Up Reminder 1.2.0\n"
 "Report-Msgid-Bugs-To: https://github.com/abszar/stand-up-reminder/issues\n"
-"POT-Creation-Date: 2026-08-30 07:50+0200\n"
+"POT-Creation-Date: 2026-08-30 09:28+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE\n"
@@ -133,7 +133,7 @@ msgid "Standing"
 msgstr ""
 
 #: stand_up_reminder/application.py
-msgid "Sit down and stop this timer"
+msgid "Sit down — restarts the work timer"
 msgstr ""
 
 #: stand_up_reminder/application.py
@@ -220,10 +220,6 @@ msgstr ""
 
 #: stand_up_reminder/application.py
 msgid "MORE"
-msgstr ""
-
-#: stand_up_reminder/application.py
-msgid "Close"
 msgstr ""
 
 #: stand_up_reminder/application.py stand_up_reminder/stats.py
@@ -319,6 +315,10 @@ msgstr ""
 
 #: stand_up_reminder/application.py
 msgid "Open Stand Up Reminder"
+msgstr ""
+
+#: stand_up_reminder/pixelui.py
+msgid "Close"
 msgstr ""
 
 #: stand_up_reminder/stats.py

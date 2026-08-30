@@ -58,6 +58,7 @@ class Scheduler:
         self.remaining = self.work_seconds
         self.away_elapsed = 0.0
         self.locked = False
+        self.standing = False
         self._warned = False
         self._held_work_remaining = self.work_seconds
         self._pause_is_timed = False
@@ -111,6 +112,11 @@ class Scheduler:
             self.phase = Phase.AWAITING_RETURN
             self.remaining = 0.0
             return Transition.BREAK_COMPLETE
+
+        # Standing is already the break, so nothing may fall due underneath
+        # it: the interval is held until the user sits back down.
+        if self.standing:
+            return None
 
         if self.phase is Phase.SNOOZED:
             self.remaining = max(0.0, self.remaining - wall_delta)
@@ -255,6 +261,8 @@ class Scheduler:
     def credit_idle_break(self, idle_seconds: float) -> bool:
         """Treat a long idle stretch as a break that was already taken."""
         self.advance()
+        if self.standing:
+            return False
         if self.phase is not Phase.WORK or idle_seconds < self.break_seconds:
             return False
         self.remaining = self.work_seconds
@@ -265,6 +273,20 @@ class Scheduler:
         transition = self.advance()
         self.locked = bool(locked)
         if not self.locked:
+            return self.advance() or transition
+        return transition
+
+    def set_standing(self, standing: bool) -> Optional[Transition]:
+        """Hold the work interval while the user is on their feet.
+
+        A break the user answers by standing lasts as long as they stay up,
+        so reminders stop rather than stacking behind the pill. Sitting back
+        down only releases the hold; restarting the interval is the caller's
+        to ask for.
+        """
+        transition = self.advance()
+        self.standing = bool(standing)
+        if not self.standing:
             return self.advance() or transition
         return transition
 

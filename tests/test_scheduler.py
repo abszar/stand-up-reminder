@@ -522,5 +522,67 @@ class StandUpTests(SchedulerFixture):
         self.assertEqual(self.scheduler.snapshot().phase, Phase.PAUSED)
 
 
+class StandingHoldTests(SchedulerFixture):
+    def test_the_work_interval_is_held_while_standing(self):
+        self.scheduler.set_standing(True)
+        self.clocks.advance(20)
+
+        self.scheduler.advance()
+
+        self.assertEqual(self.scheduler.snapshot().seconds_remaining, 30)
+
+    def test_no_break_falls_due_while_standing(self):
+        self.scheduler.set_standing(True)
+        self.clocks.advance(60)
+
+        self.assertIsNone(self.scheduler.advance())
+        self.assertEqual(self.scheduler.snapshot().phase, Phase.WORK)
+
+    def test_no_warning_fires_while_standing(self):
+        scheduler = Scheduler(
+            work_seconds=30,
+            break_seconds=2,
+            warning_seconds=10,
+            monotonic=self.clocks.monotonic,
+            wall_clock=self.clocks.wall_clock,
+        )
+        scheduler.set_standing(True)
+        self.clocks.advance(25)
+
+        self.assertIsNone(scheduler.advance())
+
+    def test_the_interval_runs_again_once_standing_ends(self):
+        self.scheduler.set_standing(True)
+        self.clocks.advance(20)
+        self.scheduler.set_standing(False)
+        self.clocks.advance(5)
+
+        self.scheduler.advance()
+
+        self.assertEqual(self.scheduler.snapshot().seconds_remaining, 25)
+
+    def test_sitting_back_down_can_restart_the_whole_interval(self):
+        self.clocks.advance(20)
+        self.scheduler.set_standing(True)
+        self.clocks.advance(300)
+        self.scheduler.set_standing(False)
+
+        self.assertTrue(self.scheduler.reset_work_interval())
+        self.assertEqual(self.scheduler.snapshot().seconds_remaining, 30)
+
+    def test_idle_is_not_credited_as_a_break_while_standing(self):
+        self.scheduler.set_standing(True)
+        self.clocks.advance(20)
+
+        self.assertFalse(self.scheduler.credit_idle_break(600))
+
+    def test_standing_leaves_a_running_break_alone(self):
+        self.scheduler.start_break()
+        self.scheduler.set_standing(True)
+        self.clocks.advance(2)
+
+        self.assertEqual(self.scheduler.advance(), Transition.BREAK_COMPLETE)
+
+
 if __name__ == "__main__":
     unittest.main()

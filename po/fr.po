@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Stand Up Reminder 1.2.0\n"
 "Report-Msgid-Bugs-To: https://github.com/abszar/stand-up-reminder/issues\n"
-"POT-Creation-Date: 2026-08-30 07:50+0200\n"
+"POT-Creation-Date: 2026-08-30 09:28+0200\n"
 "PO-Revision-Date: 2026-07-20 23:40+0200\n"
 "Last-Translator: Automatically generated\n"
 "Language-Team: none\n"
@@ -134,8 +134,8 @@ msgid "Standing"
 msgstr "Debout"
 
 #: stand_up_reminder/application.py
-msgid "Sit down and stop this timer"
-msgstr "Se rasseoir et arrêter"
+msgid "Sit down — restarts the work timer"
+msgstr "Se rasseoir — relance le minuteur de travail"
 
 #: stand_up_reminder/application.py
 msgid "Time to stand up"
@@ -222,10 +222,6 @@ msgstr "MOINS"
 #: stand_up_reminder/application.py
 msgid "MORE"
 msgstr "PLUS"
-
-#: stand_up_reminder/application.py
-msgid "Close"
-msgstr "Fermer"
 
 #: stand_up_reminder/application.py stand_up_reminder/stats.py
 #, python-format
@@ -322,6 +318,10 @@ msgstr "Prochaine pause dans 30:00"
 msgid "Open Stand Up Reminder"
 msgstr "Ouvrir Stand Up Reminder"
 
+#: stand_up_reminder/pixelui.py
+msgid "Close"
+msgstr "Fermer"
+
 #: stand_up_reminder/stats.py
 #, python-format
 msgid "%d taken"
@@ -390,6 +390,9 @@ msgstr "La moitié vous a échappé."
 msgid "Let's get more of these."
 msgstr "On en prend un peu plus ?"
 
+#~ msgid "Sit down and stop this timer"
+#~ msgstr "Se rasseoir et arrêter"
+
 #~ msgid "Pause reminders"
 #~ msgstr "Suspendre les rappels"
 
@@ -411,9 +414,6 @@ msgstr "On en prend un peu plus ?"
 
 #~ msgid "Skip this break"
 #~ msgstr "Ignorer cette pause"
-
-#~ msgid "I'm back — start the work timer"
-#~ msgstr "Je suis de retour — démarrer le minuteur de travail"
 
 #, python-format
 #~ msgid "Give me %s"

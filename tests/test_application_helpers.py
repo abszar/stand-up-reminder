@@ -470,6 +470,26 @@ class StandingCoordinatorTests(unittest.TestCase):
         coordinator.pill.hide.assert_called_once_with()
         self.assertIsNone(coordinator._standing_since)
 
+    def test_sitting_down_restarts_the_work_interval(self):
+        coordinator = self.make_coordinator()
+        coordinator._standing_since = 100.0
+
+        application.ReminderApplication._stop_standing(coordinator)
+
+        coordinator.scheduler.set_standing.assert_called_once_with(False)
+        coordinator.scheduler.reset_work_interval.assert_called_once_with()
+
+    def test_the_pill_holds_the_work_interval_while_it_counts(self):
+        coordinator = SimpleNamespace(
+            pill=Mock(), _standing_since=None, _clock=lambda: 500.0,
+            scheduler=Mock(),
+            settings=SimpleNamespace(standing_pill_position=0.5),
+        )
+
+        application.ReminderApplication._start_standing(coordinator)
+
+        coordinator.scheduler.set_standing.assert_called_once_with(True)
+
     def test_standing_from_the_menu_starts_the_counter(self):
         coordinator = self.make_coordinator()
         coordinator._standing_since = None
@@ -503,6 +523,7 @@ class StandingCoordinatorTests(unittest.TestCase):
     def test_a_break_answered_while_already_up_keeps_the_count(self):
         coordinator = SimpleNamespace(
             pill=Mock(), _standing_since=300.0, _clock=lambda: 900.0,
+            scheduler=Mock(),
             settings=SimpleNamespace(standing_pill_position=0.5),
         )
 
@@ -514,6 +535,7 @@ class StandingCoordinatorTests(unittest.TestCase):
     def test_the_pill_opens_at_the_time_already_spent_up(self):
         coordinator = SimpleNamespace(
             pill=Mock(), _standing_since=None, _clock=lambda: 500.0,
+            scheduler=Mock(),
             settings=SimpleNamespace(standing_pill_position=0.5),
         )
 

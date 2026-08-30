@@ -643,18 +643,14 @@ class StandingPill(Gtk.Window):
         self._digit_widgets: list[ui.SpriteDigits] = []
         self._rules: list[Gtk.DrawingArea] = []
 
+        # A coral cross, the one mark on the pill that reads as "stop": it
+        # closes the count and starts the next work interval from here.
         stop_button = Gtk.Button()
         stop_button.get_style_context().add_class("pixel-check")
         stop_button.set_relief(Gtk.ReliefStyle.NONE)
-        stop_button.set_tooltip_text(_("Sit down and stop this timer"))
-        stop_glyph = Gtk.DrawingArea()
-        stop_glyph.set_size_request(6 * ART, 6 * ART)
-        stop_glyph.connect(
-            "draw",
-            lambda _area, context: ui.SPRITES.paint(
-                context, "checkbox-on", 0, 0, ART, PALETTE["mist"]
-            ),
-        )
+        stop_button.set_tooltip_text(_("Sit down — restarts the work timer"))
+        stop_glyph = ui.CloseMark(ART)
+        stop_glyph.set_color(PALETTE["coral"])
         stop_button.add(stop_glyph)
         stop_button.connect("clicked", on_stop)
         stop_holder = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
@@ -2347,6 +2343,8 @@ class ReminderApplication(Gtk.Application):
             self.pill = StandingPill(self._sit_down, self._standing_pill_moved)
         if self._standing_since is None:
             self._standing_since = self._clock() - max(0.0, float(already_up))
+        # Time on your feet is the break, so the work interval waits.
+        self.scheduler.set_standing(True)
         self.pill.set_seconds(int(self._clock() - self._standing_since))
         self.pill.show_at(self.settings.standing_pill_position)
 
@@ -2363,9 +2361,18 @@ class ReminderApplication(Gtk.Application):
         self._update_interface()
 
     def _stop_standing(self) -> None:
+        """Sit back down: close the pill and start the interval afresh.
+
+        What the research counts is uninterrupted sitting, so the clock runs
+        from the moment the user sits rather than from the moment they stood
+        — a long stand is neither punished with a short interval nor cashed
+        in for a longer one.
+        """
         if self.pill is not None:
             self.pill.hide()
         self._standing_since = None
+        self.scheduler.set_standing(False)
+        self.scheduler.reset_work_interval()
 
     def _refresh_standing_pill(self) -> None:
         if self._standing_since is None or self.pill is None:
