@@ -116,6 +116,31 @@ class PillPositionTests(unittest.TestCase):
         self.assertEqual(application.pill_fraction(10, 30, 40), 0.0)
 
 
+class StandingCueTests(unittest.TestCase):
+    def test_the_first_ten_minutes_pass_in_silence(self):
+        self.assertIsNone(application.standing_cue(0, 0))
+        self.assertIsNone(application.standing_cue(0, 599))
+
+    def test_a_check_asks_whether_you_are_still_up(self):
+        self.assertEqual(application.standing_cue(599, 600), "check")
+
+    def test_checks_carry_on_every_ten_minutes(self):
+        self.assertEqual(application.standing_cue(1199, 1200), "check")
+        self.assertEqual(application.standing_cue(2399, 2400), "check")
+
+    def test_the_half_hour_asks_for_a_set_instead(self):
+        self.assertEqual(application.standing_cue(1799, 1800), "move")
+        self.assertEqual(application.standing_cue(3599, 3600), "move")
+
+    def test_a_skipped_tick_still_owes_the_cue_it_passed(self):
+        self.assertEqual(application.standing_cue(595, 640), "check")
+        self.assertEqual(application.standing_cue(1790, 1830), "move")
+
+    def test_a_clock_that_does_not_advance_owes_nothing(self):
+        self.assertIsNone(application.standing_cue(600, 600))
+        self.assertIsNone(application.standing_cue(900, 600))
+
+
 class CountdownStateTests(unittest.TestCase):
     def test_the_clock_reddens_in_the_last_ten_seconds(self):
         self.assertTrue(application.is_urgent(10))
@@ -544,9 +569,31 @@ class StandingCoordinatorTests(unittest.TestCase):
         self.assertEqual(coordinator._standing_since, 455.0)
         coordinator.pill.set_seconds.assert_called_once_with(45)
 
+    def test_the_pill_pulses_when_a_cue_falls_due(self):
+        coordinator = SimpleNamespace(
+            pill=Mock(), _standing_since=0.0, _standing_seconds=599,
+            _clock=lambda: 600.0,
+        )
+
+        application.ReminderApplication._refresh_standing_pill(coordinator)
+
+        coordinator.pill.pulse.assert_called_once_with("check")
+        self.assertEqual(coordinator._standing_seconds, 600)
+
+    def test_the_pill_is_left_unpulsed_between_cues(self):
+        coordinator = SimpleNamespace(
+            pill=Mock(), _standing_since=0.0, _standing_seconds=100,
+            _clock=lambda: 101.0,
+        )
+
+        application.ReminderApplication._refresh_standing_pill(coordinator)
+
+        coordinator.pill.pulse.assert_not_called()
+
     def test_the_pill_shows_the_time_since_standing_began(self):
         coordinator = SimpleNamespace(
-            pill=Mock(), _standing_since=100.0, _clock=lambda: 175.4
+            pill=Mock(), _standing_since=100.0, _standing_seconds=0,
+            _clock=lambda: 175.4,
         )
 
         application.ReminderApplication._refresh_standing_pill(coordinator)

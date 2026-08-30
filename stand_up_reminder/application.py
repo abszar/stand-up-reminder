@@ -76,6 +76,30 @@ def format_duration(seconds: int) -> str:
 
 
 
+# How often the pill speaks up while the count runs. The check is the more
+# frequent of the two because forgetting to close the pill costs the most:
+# the work interval stays held and no break falls due at all.
+STANDING_CHECK_SECONDS = 10 * 60
+STANDING_MOVE_SECONDS = 30 * 60
+
+
+def standing_cue(previous: int, current: int) -> Optional[str]:
+    """The pulse the pill owes as its clock passes from one reading to the next.
+
+    Working in whole periods rather than exact instants means a tick that
+    arrives late — or not at all, across a suspend — still fires the cue it
+    stepped over. Where both fall together the move cue wins, since it also
+    answers the question the check was going to ask.
+    """
+    if current <= previous:
+        return None
+    if current // STANDING_MOVE_SECONDS > previous // STANDING_MOVE_SECONDS:
+        return "move"
+    if current // STANDING_CHECK_SECONDS > previous // STANDING_CHECK_SECONDS:
+        return "check"
+    return None
+
+
 def pill_position(fraction: float, screen_height: int, pill_height: int) -> int:
     """Top of the pill for a stored fraction, kept wholly on screen."""
     travel = max(0, int(screen_height) - int(pill_height))
@@ -602,6 +626,22 @@ class StandingPill(Gtk.Window):
     WIDTH = ap(11)
     DIGIT_SCALE = ART
     BOB_MS = 500
+    PULSE_MS = 120
+    PULSE_STILL_MS = 1_500
+    # Each pulse ends on the resting sky ring, so a blink is the colour it
+    # arrives in and the number of times it comes back.
+    PULSE_FRAMES = {
+        "hour": (PALETTE["bone"], PALETTE["sky"]),
+        "check": (PALETTE["amber"], PALETTE["sky"]),
+        "move": (
+            PALETTE["mint"],
+            PALETTE["sky"],
+            PALETTE["mint"],
+            PALETTE["sky"],
+            PALETTE["mint"],
+            PALETTE["sky"],
+        ),
+    }
 
     def __init__(self, on_stop, on_move) -> None:
         super().__init__(type=Gtk.WindowType.TOPLEVEL, title=_("Standing"))
@@ -613,6 +653,7 @@ class StandingPill(Gtk.Window):
         self._bob = 0
         self._bob_timer = 0
         self._flash = 0
+        self._pulse_timer = 0
         ui.keep_above(self)
         self.set_accept_focus(False)
         self.set_focus_on_map(False)
@@ -708,17 +749,58 @@ class StandingPill(Gtk.Window):
 
     def _flash_ring(self) -> None:
         """A short sky-bone-sky flash rewards passing the hour."""
-        if not ui.animations_enabled():
+        self.pulse("hour")
+
+    def pulse(self, kind: str) -> None:
+        """Blink the ring, and blink it differently for each thing it says.
+
+        The ring is the pill's whole voice: nothing here opens, waits or has
+        to be dismissed. Colour and beat count carry the meaning — one amber
+        blink asks whether you are still up, three mint blinks ask for a set
+        — so a glance is enough and a missed one costs nothing.
+        """
+        frames = self.PULSE_FRAMES.get(kind)
+        if frames is None:
             return
-        self._flash = 0
+        self._stop_pulse()
+        if not ui.animations_enabled():
+            # The cue carries information, not decoration, so reduced motion
+            # gets it as a still: the colour is held, then put back.
+            self._ring = frames[0]
+            self.queue_draw()
+            self._pulse_timer = GLib.timeout_add(
+                self.PULSE_STILL_MS, self._end_still_pulse
+            )
+            return
+        # The first frame lands now rather than a beat from now, so the ring
+        # answers the moment the cue falls due.
+        self._flash = 1
+        self._ring = frames[0]
+        self.queue_draw()
 
         def step() -> bool:
-            self._flash += 1
-            self._ring = PALETTE["bone"] if self._flash == 1 else PALETTE["sky"]
+            self._ring = frames[self._flash]
             self.queue_draw()
-            return GLib.SOURCE_CONTINUE if self._flash < 2 else GLib.SOURCE_REMOVE
+            self._flash += 1
+            if self._flash < len(frames):
+                return GLib.SOURCE_CONTINUE
+            self._pulse_timer = 0
+            return GLib.SOURCE_REMOVE
 
-        GLib.timeout_add(100, step)
+        self._pulse_timer = GLib.timeout_add(self.PULSE_MS, step)
+
+    def _end_still_pulse(self) -> bool:
+        self._pulse_timer = 0
+        self._ring = PALETTE["sky"]
+        self.queue_draw()
+        return GLib.SOURCE_REMOVE
+
+    def _stop_pulse(self) -> None:
+        if self._pulse_timer:
+            GLib.source_remove(self._pulse_timer)
+            self._pulse_timer = 0
+        self._ring = PALETTE["sky"]
+        self.queue_draw()
 
     def _on_draw(self, _widget, context) -> bool:
         width = self.get_allocated_width()
@@ -743,6 +825,7 @@ class StandingPill(Gtk.Window):
 
     def hide(self) -> None:  # noqa: A003 - matches Gtk.Widget.hide
         self._stop_bob()
+        self._stop_pulse()
         super().hide()
 
     def _start_bob(self) -> None:
@@ -1755,6 +1838,7 @@ class ReminderApplication(Gtk.Application):
         self._indicator_icon = ICON_NAME
         self._idle_credit_pending = False
         self._standing_since: Optional[float] = None
+        self._standing_seconds = 0
         self._clock = time.monotonic
         self._suppress_menu_events = False
         self._wayland = False
@@ -2343,6 +2427,7 @@ class ReminderApplication(Gtk.Application):
             self.pill = StandingPill(self._sit_down, self._standing_pill_moved)
         if self._standing_since is None:
             self._standing_since = self._clock() - max(0.0, float(already_up))
+            self._standing_seconds = int(self._clock() - self._standing_since)
         # Time on your feet is the break, so the work interval waits.
         self.scheduler.set_standing(True)
         self.pill.set_seconds(int(self._clock() - self._standing_since))
@@ -2371,13 +2456,19 @@ class ReminderApplication(Gtk.Application):
         if self.pill is not None:
             self.pill.hide()
         self._standing_since = None
+        self._standing_seconds = 0
         self.scheduler.set_standing(False)
         self.scheduler.reset_work_interval()
 
     def _refresh_standing_pill(self) -> None:
         if self._standing_since is None or self.pill is None:
             return
-        self.pill.set_seconds(int(self._clock() - self._standing_since))
+        seconds = int(self._clock() - self._standing_since)
+        cue = standing_cue(self._standing_seconds, seconds)
+        self._standing_seconds = seconds
+        self.pill.set_seconds(seconds)
+        if cue is not None:
+            self.pill.pulse(cue)
 
     def _standing_pill_moved(self, fraction: float) -> None:
         self._save_settings(standing_pill_position=fraction)
