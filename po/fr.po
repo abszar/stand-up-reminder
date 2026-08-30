@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Stand Up Reminder 1.2.0\n"
 "Report-Msgid-Bugs-To: https://github.com/abszar/stand-up-reminder/issues\n"
-"POT-Creation-Date: 2026-08-29 21:46+0200\n"
+"POT-Creation-Date: 2026-08-30 07:50+0200\n"
 "PO-Revision-Date: 2026-07-20 23:40+0200\n"
 "Last-Translator: Automatically generated\n"
 "Language-Team: none\n"
@@ -116,6 +116,14 @@ msgstr "Prochaine pause dans %s"
 #: stand_up_reminder/application.py
 msgid "Paused"
 msgstr "En pause"
+
+#: stand_up_reminder/application.py
+msgid "I'm sitting down"
+msgstr "Je me rassois"
+
+#: stand_up_reminder/application.py
+msgid "I'm standing now"
+msgstr "Je suis debout"
 
 #: stand_up_reminder/application.py stand_up_reminder/stats.py
 msgid "Nothing recorded yet"
@@ -274,8 +282,8 @@ msgid "Done"
 msgstr "Terminé"
 
 #: stand_up_reminder/application.py
-msgid "Next break in 30:00"
-msgstr "Prochaine pause dans 30:00"
+msgid "STAND UP"
+msgstr "DEBOUT"
 
 #: stand_up_reminder/application.py
 msgid "Start a break now"
@@ -286,17 +294,17 @@ msgid "I'm back — restart the timer"
 msgstr "Je suis de retour — relancer le minuteur"
 
 #: stand_up_reminder/application.py
-msgid "Pause reminders"
-msgstr "Suspendre les rappels"
+msgid "PAUSE REMINDERS"
+msgstr "METTRE EN PAUSE"
 
 #: stand_up_reminder/application.py
 #, python-format
-msgid "For %s"
-msgstr "Pendant %s"
+msgid "%d HOUR"
+msgstr "%d HEURE"
 
 #: stand_up_reminder/application.py
-msgid "Until I resume"
-msgstr "Jusqu'à ce que je reprenne"
+msgid "UNTIL I RESUME"
+msgstr "JUSQU'À REPRISE"
 
 #: stand_up_reminder/application.py
 msgid "Resume reminders"
@@ -305,6 +313,14 @@ msgstr "Reprendre les rappels"
 #: stand_up_reminder/application.py
 msgid "Quit"
 msgstr "Quitter"
+
+#: stand_up_reminder/application.py
+msgid "Next break in 30:00"
+msgstr "Prochaine pause dans 30:00"
+
+#: stand_up_reminder/application.py
+msgid "Open Stand Up Reminder"
+msgstr "Ouvrir Stand Up Reminder"
 
 #: stand_up_reminder/stats.py
 #, python-format
@@ -373,6 +389,16 @@ msgstr "La moitié vous a échappé."
 #: stand_up_reminder/stats.py
 msgid "Let's get more of these."
 msgstr "On en prend un peu plus ?"
+
+#~ msgid "Pause reminders"
+#~ msgstr "Suspendre les rappels"
+
+#, python-format
+#~ msgid "For %s"
+#~ msgstr "Pendant %s"
+
+#~ msgid "Until I resume"
+#~ msgstr "Jusqu'à ce que je reprenne"
 
 #~ msgid "Break complete"
 #~ msgstr "Pause terminée"

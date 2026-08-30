@@ -258,6 +258,11 @@ def indicator_label(
     return ""
 
 
+def standing_action_label(standing: bool) -> str:
+    """One row that starts the standing counter, or stops it."""
+    return _("I'm sitting down") if standing else _("I'm standing now")
+
+
 def menu_summary(stats: DailyStats) -> str:
     """The menu's day row: block glyphs, then the counts they stand for."""
     summary = outcome_summary(stats)
@@ -1591,6 +1596,149 @@ class SettingsPanel(Gtk.Window, ui.PixelFrameWindow):
         return False
 
 
+class ControlWindow(Gtk.Window, ui.PixelFrameWindow):
+    """The application's own hub, in the pixel language the menu cannot use.
+
+    GNOME Shell draws the top-bar menu from a list of labels sent over DBus,
+    so the application never paints those rows and cannot give them the
+    interface face. Everything that used to live in that menu lives here
+    instead, leaving the menu the status it can only ever be.
+    """
+
+    WIDTH = ap(120)
+
+    def __init__(
+        self,
+        on_start_break,
+        on_return,
+        on_standing,
+        on_pause,
+        on_resume,
+        on_score,
+        on_settings,
+        on_quit,
+    ) -> None:
+        super().__init__(type=Gtk.WindowType.TOPLEVEL, title=APP_NAME)
+        self.set_default_size(self.WIDTH, -1)
+        self.set_size_request(self.WIDTH, -1)
+        self.set_resizable(False)
+        self.set_decorated(False)
+        self.set_position(Gtk.WindowPosition.CENTER)
+        self.set_keep_above(True)
+        self.set_skip_taskbar_hint(True)
+        self.set_skip_pager_hint(True)
+        self.set_type_hint(Gdk.WindowTypeHint.DIALOG)
+        self.get_style_context().add_class("pixel-window")
+        self.setup_frame()
+        self.connect("delete-event", self._on_delete)
+        self.connect("key-press-event", self._on_key_press)
+
+        card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        card.set_border_width(ap(2) + ap(6))
+
+        card.pack_start(
+            ui.pixel_label(_("STAND UP"), "pixel-window-title", 0.0), False, False, 0
+        )
+
+        self.status = ui.pixel_label("", "pixel-secondary", 0.0)
+        self.status.set_margin_top(ap(4))
+        card.pack_start(self.status, False, False, 0)
+
+        self.summary = ui.pixel_label("", "pixel-hint", 0.0)
+        self.summary.set_margin_top(ap(2))
+        card.pack_start(self.summary, False, False, 0)
+
+        self.start_button = ui.pixel_button(_("Start a break now"))
+        self.start_button.set_margin_top(ap(8))
+        self.start_button.connect("clicked", on_start_break)
+        card.pack_start(self.start_button, False, False, 0)
+
+        self.return_button = ui.pixel_button(_("I'm back — restart the timer"))
+        self.return_button.set_margin_top(ap(2))
+        self.return_button.connect("clicked", on_return)
+        card.pack_start(self.return_button, False, False, 0)
+
+        self.standing_button = ui.pixel_button(
+            standing_action_label(False), "standing"
+        )
+        self.standing_button.set_margin_top(ap(2))
+        self.standing_button.connect("clicked", on_standing)
+        card.pack_start(self.standing_button, False, False, 0)
+
+        pause_caption = ui.pixel_label(_("PAUSE REMINDERS"), "pixel-caption", 0.0)
+        pause_caption.set_margin_top(ap(8))
+        pause_caption.set_margin_bottom(ap(2))
+        card.pack_start(pause_caption, False, False, 0)
+
+        self.pause_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=ap(2))
+        self.pause_row.set_homogeneous(True)
+        self.pause_buttons = []
+        for label, seconds in (
+            (_("%d MIN") % (PAUSE_PRESETS[0] // 60), PAUSE_PRESETS[0]),
+            (_("%d HOUR") % (PAUSE_PRESETS[1] // 3600), PAUSE_PRESETS[1]),
+            (_("UNTIL I RESUME"), None),
+        ):
+            button = Gtk.Button(label=label)
+            button.get_style_context().add_class("pixel-segment")
+            button.connect("clicked", lambda _b, s=seconds: on_pause(s))
+            self.pause_row.pack_start(button, True, True, 0)
+            self.pause_buttons.append(button)
+        card.pack_start(self.pause_row, False, False, 0)
+
+        self.resume_button = ui.pixel_button(_("Resume reminders"), "primary")
+        self.resume_button.set_no_show_all(True)
+        self.resume_button.set_margin_top(ap(2))
+        self.resume_button.connect("clicked", on_resume)
+        card.pack_start(self.resume_button, False, False, 0)
+
+        pages = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=ap(2))
+        pages.set_margin_top(ap(8))
+        pages.set_homogeneous(True)
+        score_button = ui.pixel_button(_("Score"))
+        score_button.connect("clicked", on_score)
+        settings_button = ui.pixel_button(_("Settings"))
+        settings_button.connect("clicked", on_settings)
+        pages.pack_start(score_button, True, True, 0)
+        pages.pack_start(settings_button, True, True, 0)
+        card.pack_start(pages, False, False, 0)
+
+        footer = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=ap(2))
+        footer.set_margin_top(ap(8))
+        footer.set_homogeneous(True)
+        quit_button = ui.pixel_button(_("Quit"))
+        quit_button.connect("clicked", on_quit)
+        close_button = ui.pixel_button(_("Close"))
+        close_button.connect("clicked", lambda *_args: self.hide())
+        footer.pack_start(quit_button, True, True, 0)
+        footer.pack_start(close_button, True, True, 0)
+        card.pack_start(footer, False, False, 0)
+
+        self.add(card)
+
+    def update_state(
+        self, view: IndicatorView, summary: str, standing: bool
+    ) -> None:
+        self.status.set_text(view.status)
+        self.summary.set_text(summary)
+        self.start_button.set_sensitive(view.can_start_break)
+        self.return_button.set_sensitive(view.can_reset_work)
+        self.standing_button.set_label(standing_action_label(standing))
+        for button in self.pause_buttons:
+            button.set_sensitive(view.can_pause)
+        self.pause_row.set_visible(not view.can_resume)
+        self.resume_button.set_visible(view.can_resume)
+
+    def _on_delete(self, *_args) -> bool:
+        self.hide()
+        return True
+
+    def _on_key_press(self, _window, event) -> bool:
+        if event.keyval == Gdk.KEY_Escape:
+            self.hide()
+            return True
+        return False
+
+
 class ReminderApplication(Gtk.Application):
     def __init__(self) -> None:
         super().__init__(application_id=APP_ID, flags=Gio.ApplicationFlags.FLAGS_NONE)
@@ -1599,15 +1747,12 @@ class ReminderApplication(Gtk.Application):
         self.stats_window: Optional[StatsWindow] = None
         self.pill: Optional[StandingPill] = None
         self.settings_panel: Optional[SettingsPanel] = None
+        self.control_window: Optional[ControlWindow] = None
         self.settings = Settings()
         self.indicator = None
         self.stats = None
         self.status_item = None
         self.stats_item = None
-        self.start_item = None
-        self.reset_item = None
-        self.resume_item = None
-        self.pause_item = None
         self.active_item = None
         self.wall_item = None
         self.work_items: dict = {}
@@ -1754,8 +1899,9 @@ class ReminderApplication(Gtk.Application):
         self.indicator.set_title(APP_NAME)
         self.indicator.set_icon_full(ICON_NAME, APP_NAME)
 
-        # Seven flat rows: the shell draws this menu, so everything that can
-        # be styled has moved into the settings panel instead.
+        # GNOME Shell draws this menu itself, from labels sent over DBus, so
+        # it carries the day's state and nothing else: every action lives in
+        # the control window, where the application does its own drawing.
         menu = Gtk.Menu()
         self.status_item = Gtk.MenuItem(label=_("Next break in 30:00"))
         self.status_item.set_sensitive(False)
@@ -1766,44 +1912,30 @@ class ReminderApplication(Gtk.Application):
         menu.append(self.stats_item)
         menu.append(Gtk.SeparatorMenuItem())
 
-        self.start_item = Gtk.MenuItem(label=_("Start a break now"))
-        self.start_item.connect("activate", self._start_break_now)
-        menu.append(self.start_item)
-
-        self.reset_item = Gtk.MenuItem(label=_("I'm back — restart the timer"))
-        self.reset_item.connect("activate", self._reset_work_interval)
-        menu.append(self.reset_item)
-
-        self.pause_item = Gtk.MenuItem(label=_("Pause reminders"))
-        pause_menu = Gtk.Menu()
-        for seconds in PAUSE_PRESETS:
-            item = Gtk.MenuItem(label=_("For %s") % duration_label(seconds))
-            item.connect("activate", self._pause_reminders, seconds)
-            pause_menu.append(item)
-        indefinite = Gtk.MenuItem(label=_("Until I resume"))
-        indefinite.connect("activate", self._pause_reminders, None)
-        pause_menu.append(indefinite)
-        self.pause_item.set_submenu(pause_menu)
-        menu.append(self.pause_item)
-
-        self.resume_item = Gtk.MenuItem(label=_("Resume reminders"))
-        self.resume_item.connect("activate", self._resume_reminders)
-        menu.append(self.resume_item)
-
-        score_item = Gtk.MenuItem(label=_("Score"))
-        score_item.connect("activate", self._open_stats_window)
-        menu.append(score_item)
-
-        settings_item = Gtk.MenuItem(label=_("Settings"))
-        settings_item.connect("activate", self._open_settings_panel)
-        menu.append(settings_item)
-        menu.append(Gtk.SeparatorMenuItem())
-
-        quit_item = Gtk.MenuItem(label=_("Quit"))
-        quit_item.connect("activate", self._quit_cleanly)
-        menu.append(quit_item)
+        open_item = Gtk.MenuItem(label=_("Open Stand Up Reminder"))
+        open_item.connect("activate", self._open_control_window)
+        menu.append(open_item)
         menu.show_all()
         self.indicator.set_menu(menu)
+
+    def _open_control_window(self, _item) -> None:
+        if self.control_window is None:
+            self.control_window = ControlWindow(
+                self._start_break_now,
+                self._reset_work_interval,
+                self._toggle_standing,
+                self._pause_from_control,
+                self._resume_reminders,
+                self._open_stats_window,
+                self._open_settings_panel,
+                self._quit_cleanly,
+            )
+        self._update_interface()
+        self.control_window.show_all()
+        self.control_window.present()
+
+    def _pause_from_control(self, seconds: Optional[int]) -> None:
+        self._pause_reminders(None, seconds)
 
     def _open_settings_panel(self, _item) -> None:
         if self.settings_panel is None:
@@ -2029,12 +2161,13 @@ class ReminderApplication(Gtk.Application):
             snapshot.paused_indefinitely,
         )
         self.status_item.set_label(view.status)
-        self.start_item.set_sensitive(view.can_start_break)
-        self.reset_item.set_sensitive(view.can_reset_work)
-        self.pause_item.set_sensitive(view.can_pause)
-        self.resume_item.set_sensitive(view.can_resume)
         today = today_key()
-        self.stats_item.set_label(self._stats_label(today))
+        summary = self._stats_label(today)
+        self.stats_item.set_label(summary)
+        if self.control_window is not None:
+            self.control_window.update_state(
+                view, summary, self._standing_since is not None
+            )
         if self._score_day != today:
             self._refresh_score_line()
 
@@ -2221,12 +2354,26 @@ class ReminderApplication(Gtk.Application):
         self._update_interface()
 
     def _start_standing(self, already_up: float = 0.0) -> None:
+        """Open the pill, keeping any count that is already running.
+
+        Standing can begin at a break or straight from the menu, and a break
+        answered by someone who is already up keeps their clock rather than
+        starting a fresh one — that is what "keep count" means.
+        """
         if self.pill is None:
             self.pill = StandingPill(self._sit_down, self._standing_pill_moved)
-        already_up = max(0.0, float(already_up))
-        self._standing_since = self._clock() - already_up
-        self.pill.set_seconds(int(already_up))
+        if self._standing_since is None:
+            self._standing_since = self._clock() - max(0.0, float(already_up))
+        self.pill.set_seconds(int(self._clock() - self._standing_since))
         self.pill.show_at(self.settings.standing_pill_position)
+
+    def _toggle_standing(self, _item) -> None:
+        """Start or stop the standing counter without a break being due."""
+        if self._standing_since is None:
+            self._start_standing()
+        else:
+            self._stop_standing()
+        self._update_interface()
 
     def _sit_down(self, _button) -> None:
         self._stop_standing()
@@ -2272,6 +2419,8 @@ class ReminderApplication(Gtk.Application):
             self.pill.destroy()
         if self.settings_panel:
             self.settings_panel.destroy()
+        if self.control_window:
+            self.control_window.destroy()
         if self.stats_window:
             self.stats_window.destroy()
         if self.window:

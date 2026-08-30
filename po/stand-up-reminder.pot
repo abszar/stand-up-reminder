@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Stand Up Reminder 1.2.0\n"
 "Report-Msgid-Bugs-To: https://github.com/abszar/stand-up-reminder/issues\n"
-"POT-Creation-Date: 2026-08-29 21:46+0200\n"
+"POT-Creation-Date: 2026-08-30 07:50+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE\n"
@@ -114,6 +114,14 @@ msgstr ""
 
 #: stand_up_reminder/application.py
 msgid "Paused"
+msgstr ""
+
+#: stand_up_reminder/application.py
+msgid "I'm sitting down"
+msgstr ""
+
+#: stand_up_reminder/application.py
+msgid "I'm standing now"
 msgstr ""
 
 #: stand_up_reminder/application.py stand_up_reminder/stats.py
@@ -273,7 +281,7 @@ msgid "Done"
 msgstr ""
 
 #: stand_up_reminder/application.py
-msgid "Next break in 30:00"
+msgid "STAND UP"
 msgstr ""
 
 #: stand_up_reminder/application.py
@@ -285,16 +293,16 @@ msgid "I'm back — restart the timer"
 msgstr ""
 
 #: stand_up_reminder/application.py
-msgid "Pause reminders"
+msgid "PAUSE REMINDERS"
 msgstr ""
 
 #: stand_up_reminder/application.py
 #, python-format
-msgid "For %s"
+msgid "%d HOUR"
 msgstr ""
 
 #: stand_up_reminder/application.py
-msgid "Until I resume"
+msgid "UNTIL I RESUME"
 msgstr ""
 
 #: stand_up_reminder/application.py
@@ -303,6 +311,14 @@ msgstr ""
 
 #: stand_up_reminder/application.py
 msgid "Quit"
+msgstr ""
+
+#: stand_up_reminder/application.py
+msgid "Next break in 30:00"
+msgstr ""
+
+#: stand_up_reminder/application.py
+msgid "Open Stand Up Reminder"
 msgstr ""
 
 #: stand_up_reminder/stats.py

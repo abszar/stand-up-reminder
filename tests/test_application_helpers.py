@@ -207,6 +207,14 @@ class BreakViewTests(unittest.TestCase):
         self.assertFalse(view.can_stand)
 
 
+class StandingActionTests(unittest.TestCase):
+    def test_the_row_offers_to_stand_when_seated(self):
+        self.assertEqual(application.standing_action_label(False), "I'm standing now")
+
+    def test_the_row_offers_to_sit_when_standing(self):
+        self.assertEqual(application.standing_action_label(True), "I'm sitting down")
+
+
 class BreakHintTests(unittest.TestCase):
     def test_the_break_names_all_three_keys(self):
         view = application.break_view(Phase.BREAK, 75, 45)
@@ -461,6 +469,47 @@ class StandingCoordinatorTests(unittest.TestCase):
 
         coordinator.pill.hide.assert_called_once_with()
         self.assertIsNone(coordinator._standing_since)
+
+    def test_standing_from_the_menu_starts_the_counter(self):
+        coordinator = self.make_coordinator()
+        coordinator._standing_since = None
+        coordinator._stop_standing = Mock()
+
+        application.ReminderApplication._toggle_standing(coordinator, None)
+
+        coordinator._start_standing.assert_called_once_with()
+        coordinator._stop_standing.assert_not_called()
+
+    def test_the_same_row_sits_back_down(self):
+        coordinator = self.make_coordinator()
+        coordinator._standing_since = 100.0
+        coordinator._stop_standing = Mock()
+
+        application.ReminderApplication._toggle_standing(coordinator, None)
+
+        coordinator._stop_standing.assert_called_once_with()
+        coordinator._start_standing.assert_not_called()
+
+    def test_standing_from_the_menu_leaves_the_timers_alone(self):
+        coordinator = self.make_coordinator()
+        coordinator._standing_since = None
+        coordinator._stop_standing = Mock()
+
+        application.ReminderApplication._toggle_standing(coordinator, None)
+
+        coordinator.scheduler.stand_up.assert_not_called()
+        coordinator._record_outcome.assert_not_called()
+
+    def test_a_break_answered_while_already_up_keeps_the_count(self):
+        coordinator = SimpleNamespace(
+            pill=Mock(), _standing_since=300.0, _clock=lambda: 900.0,
+            settings=SimpleNamespace(standing_pill_position=0.5),
+        )
+
+        application.ReminderApplication._start_standing(coordinator, 45)
+
+        self.assertEqual(coordinator._standing_since, 300.0)
+        coordinator.pill.set_seconds.assert_called_once_with(600)
 
     def test_the_pill_opens_at_the_time_already_spent_up(self):
         coordinator = SimpleNamespace(
