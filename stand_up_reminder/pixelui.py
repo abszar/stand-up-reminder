@@ -473,6 +473,30 @@ def pixel_label(text: str, style: str, align: float = 0.5) -> Gtk.Label:
     return label
 
 
+def ordinary_window(window: Gtk.Window) -> None:
+    """A page of the application: undecorated, but otherwise a normal window.
+
+    The break card has to stay above everything; nothing else does. These
+    windows go behind whatever you click next, keep their place in the
+    window list, and are dragged by their own body, since they carry no
+    title bar to grab.
+    """
+    window.set_decorated(False)
+    window.set_resizable(False)
+    window.set_type_hint(Gdk.WindowTypeHint.NORMAL)
+    window.add_events(Gdk.EventMask.BUTTON_PRESS_MASK)
+    window.connect("button-press-event", _begin_drag)
+
+
+def _begin_drag(window: Gtk.Window, event) -> bool:
+    if event.button != 1:
+        return False
+    window.begin_move_drag(
+        event.button, int(event.x_root), int(event.y_root), event.time
+    )
+    return True
+
+
 def keep_above(window: Gtk.Window) -> None:
     window.set_decorated(False)
     window.set_resizable(False)
