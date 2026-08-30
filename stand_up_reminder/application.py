@@ -2209,18 +2209,23 @@ class ReminderApplication(Gtk.Application):
 
     def _stand_up(self, _button) -> None:
         """Take the break standing: count it, then start the standing pill."""
+        # The break has been counting up since it opened, and standing is a
+        # way of taking it rather than a new event, so the pill carries that
+        # clock on instead of restarting at zero.
+        already_up = self.scheduler.snapshot().away_seconds
         transition = self.scheduler.stand_up()
         if transition is Transition.END_BREAK:
             self._record_outcome(BreakOutcome.TAKEN)
             self._apply_transition(transition)
-            self._start_standing()
+            self._start_standing(already_up)
         self._update_interface()
 
-    def _start_standing(self) -> None:
+    def _start_standing(self, already_up: float = 0.0) -> None:
         if self.pill is None:
             self.pill = StandingPill(self._sit_down, self._standing_pill_moved)
-        self._standing_since = self._clock()
-        self.pill.set_seconds(0)
+        already_up = max(0.0, float(already_up))
+        self._standing_since = self._clock() - already_up
+        self.pill.set_seconds(int(already_up))
         self.pill.show_at(self.settings.standing_pill_position)
 
     def _sit_down(self, _button) -> None:

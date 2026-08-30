@@ -419,8 +419,29 @@ class StandingCoordinatorTests(unittest.TestCase):
             application.BreakOutcome.TAKEN
         )
         coordinator._apply_transition.assert_called_once_with(Transition.END_BREAK)
-        coordinator._start_standing.assert_called_once_with()
         coordinator._update_interface.assert_called_once_with()
+
+    def test_the_pill_carries_on_from_the_break_s_own_clock(self):
+        coordinator = self.make_coordinator()
+        coordinator.scheduler.stand_up.return_value = Transition.END_BREAK
+        coordinator.scheduler.snapshot.return_value = SimpleNamespace(
+            away_seconds=45
+        )
+
+        application.ReminderApplication._stand_up(coordinator, None)
+
+        coordinator._start_standing.assert_called_once_with(45)
+
+    def test_standing_from_a_fresh_break_starts_at_zero(self):
+        coordinator = self.make_coordinator()
+        coordinator.scheduler.stand_up.return_value = Transition.END_BREAK
+        coordinator.scheduler.snapshot.return_value = SimpleNamespace(
+            away_seconds=0
+        )
+
+        application.ReminderApplication._stand_up(coordinator, None)
+
+        coordinator._start_standing.assert_called_once_with(0)
 
     def test_standing_outside_a_break_changes_nothing(self):
         coordinator = self.make_coordinator()
@@ -440,6 +461,17 @@ class StandingCoordinatorTests(unittest.TestCase):
 
         coordinator.pill.hide.assert_called_once_with()
         self.assertIsNone(coordinator._standing_since)
+
+    def test_the_pill_opens_at_the_time_already_spent_up(self):
+        coordinator = SimpleNamespace(
+            pill=Mock(), _standing_since=None, _clock=lambda: 500.0,
+            settings=SimpleNamespace(standing_pill_position=0.5),
+        )
+
+        application.ReminderApplication._start_standing(coordinator, 45)
+
+        self.assertEqual(coordinator._standing_since, 455.0)
+        coordinator.pill.set_seconds.assert_called_once_with(45)
 
     def test_the_pill_shows_the_time_since_standing_began(self):
         coordinator = SimpleNamespace(
