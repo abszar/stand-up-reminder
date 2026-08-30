@@ -268,6 +268,55 @@ class DiscreetModeTests(unittest.TestCase):
         app.window.show_all.assert_not_called()
         app._show_dimmers.assert_not_called()
 
+    def test_the_pre_break_warning_also_goes_to_the_dock(self):
+        app = SimpleNamespace(
+            scheduler=Mock(),
+            discreet=True,
+            window=Mock(),
+            _show_dock=Mock(),
+            _refresh_score_line=Mock(),
+        )
+        app.scheduler.snapshot.return_value = SimpleNamespace(
+            locked=False, phase=Phase.WORK, seconds_remaining=15, away_seconds=0
+        )
+        application.ReminderApplication._show_warning(app)
+        app._show_dock.assert_called_once_with(app.scheduler.snapshot.return_value)
+        app.window.show_all.assert_not_called()
+
+    def test_the_warning_uses_the_full_card_outside_discreet(self):
+        app = SimpleNamespace(
+            scheduler=Mock(),
+            discreet=False,
+            window=Mock(),
+            _show_dock=Mock(),
+            _refresh_score_line=Mock(),
+        )
+        app.scheduler.snapshot.return_value = SimpleNamespace(
+            locked=False, phase=Phase.WORK, seconds_remaining=15, away_seconds=0
+        )
+        application.ReminderApplication._show_warning(app)
+        app._show_dock.assert_not_called()
+        app.window.show_all.assert_called_once_with()
+
+    def test_no_surface_opens_over_a_locked_screen_in_either_mode(self):
+        for discreet in (True, False):
+            with self.subTest(discreet=discreet):
+                app = SimpleNamespace(
+                    scheduler=Mock(),
+                    discreet=discreet,
+                    window=Mock(),
+                    _show_dock=Mock(),
+                    _show_dimmers=Mock(),
+                    _refresh_score_line=Mock(),
+                )
+                app.scheduler.snapshot.return_value = SimpleNamespace(
+                    locked=True, phase=Phase.BREAK, seconds_remaining=90, away_seconds=0
+                )
+                application.ReminderApplication._show_break(app)
+                application.ReminderApplication._show_warning(app)
+                app._show_dock.assert_not_called()
+                app.window.show_all.assert_not_called()
+
     def test_the_full_card_still_dims_the_screen(self):
         app = SimpleNamespace(
             scheduler=Mock(),

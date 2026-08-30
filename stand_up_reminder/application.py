@@ -2560,6 +2560,11 @@ class ReminderApplication(Gtk.Application):
         snapshot = self.scheduler.snapshot()
         if snapshot.locked or snapshot.phase is not Phase.WORK:
             return
+        if self.discreet:
+            # The warning is the same interruption as the break itself, only
+            # earlier, so it takes the same surface.
+            self._show_dock(snapshot)
+            return
         # Bring the day track up to the present before it becomes visible.
         self._refresh_score_line()
         self.window.update_state(
