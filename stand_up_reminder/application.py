@@ -399,6 +399,20 @@ button.pixel-button-standing:hover {
 button.pixel-button-standing:active {
     background-color: #231d33;
 }
+/* Leaving is the one destructive action on the page, so it wears coral. */
+button.pixel-button-danger {
+    background-color: #1a1524;
+    border-color: #ff5f5f;
+    color: #ff5f5f;
+}
+button.pixel-button-danger:hover {
+    background-color: #ff5f5f;
+    color: #1a1524;
+}
+button.pixel-button-danger:active {
+    background-color: #231d33;
+    color: #ff5f5f;
+}
 /* Segmented duration cells in the settings panel. */
 button.pixel-segment {
     min-height: 40px;
@@ -1201,7 +1215,7 @@ class StatsWindow(Gtk.Window, ui.PixelFrameWindow):
         self.set_default_size(self.WIDTH, ap(210))
         self.set_size_request(self.WIDTH, -1)
         self.set_position(Gtk.WindowPosition.CENTER)
-        ui.ordinary_window(self)
+        ui.page_window(self)
         self.get_style_context().add_class("pixel-window")
         self.setup_frame()
         self.connect("delete-event", self._on_delete)
@@ -1210,7 +1224,9 @@ class StatsWindow(Gtk.Window, ui.PixelFrameWindow):
         card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         card.set_border_width(ap(2) + ap(6))
 
-        card.pack_start(ui.pixel_label(_("SCORE"), "pixel-window-title", 0.0), False, False, 0)
+        card.pack_start(
+            ui.page_header(_("SCORE"), lambda *_args: self.hide()), False, False, 0
+        )
 
         caption = ui.pixel_label(_("THIS WEEK"), "pixel-caption", 0.0)
         caption.set_margin_top(ap(6))
@@ -1294,11 +1310,6 @@ class StatsWindow(Gtk.Window, ui.PixelFrameWindow):
         self.week_line = ui.pixel_label("", "pixel-prompt", 0.0)
         self.week_line.set_margin_top(ap(2))
         card.pack_start(self.week_line, False, False, 0)
-
-        close_button = ui.pixel_button(_("Close"))
-        close_button.set_margin_top(ap(6))
-        close_button.connect("clicked", lambda *_args: self.hide())
-        card.pack_start(close_button, False, False, 0)
 
         self.add(card)
 
@@ -1428,7 +1439,7 @@ class SettingsPanel(Gtk.Window, ui.PixelFrameWindow):
         self.set_default_size(self.WIDTH, -1)
         self.set_size_request(self.WIDTH, -1)
         self.set_position(Gtk.WindowPosition.CENTER)
-        ui.ordinary_window(self)
+        ui.page_window(self)
         self.get_style_context().add_class("pixel-window")
         self.setup_frame()
         self.connect("delete-event", self._on_delete)
@@ -1438,7 +1449,7 @@ class SettingsPanel(Gtk.Window, ui.PixelFrameWindow):
         card.set_border_width(ap(2) + ap(6))
 
         card.pack_start(
-            ui.pixel_label(_("SETTINGS"), "pixel-window-title", 0.0), False, False, 0
+            ui.page_header(_("SETTINGS"), lambda *_args: self.hide()), False, False, 0
         )
 
         card.pack_start(self._group(_("WORK INTERVAL")), False, False, 0)
@@ -1612,7 +1623,7 @@ class ControlWindow(Gtk.Window, ui.PixelFrameWindow):
         self.set_default_size(self.WIDTH, -1)
         self.set_size_request(self.WIDTH, -1)
         self.set_position(Gtk.WindowPosition.CENTER)
-        ui.ordinary_window(self)
+        ui.page_window(self)
         self.get_style_context().add_class("pixel-window")
         self.setup_frame()
         self.connect("delete-event", self._on_delete)
@@ -1622,7 +1633,7 @@ class ControlWindow(Gtk.Window, ui.PixelFrameWindow):
         card.set_border_width(ap(2) + ap(6))
 
         card.pack_start(
-            ui.pixel_label(_("STAND UP"), "pixel-window-title", 0.0), False, False, 0
+            ui.page_header(_("STAND UP"), lambda *_args: self.hide()), False, False, 0
         )
 
         self.status = ui.pixel_label("", "pixel-secondary", 0.0)
@@ -1687,16 +1698,10 @@ class ControlWindow(Gtk.Window, ui.PixelFrameWindow):
         pages.pack_start(settings_button, True, True, 0)
         card.pack_start(pages, False, False, 0)
 
-        footer = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=ap(2))
-        footer.set_margin_top(ap(8))
-        footer.set_homogeneous(True)
-        quit_button = ui.pixel_button(_("Quit"))
+        quit_button = ui.pixel_button(_("Quit"), "danger")
+        quit_button.set_margin_top(ap(8))
         quit_button.connect("clicked", on_quit)
-        close_button = ui.pixel_button(_("Close"))
-        close_button.connect("clicked", lambda *_args: self.hide())
-        footer.pack_start(quit_button, True, True, 0)
-        footer.pack_start(close_button, True, True, 0)
-        card.pack_start(footer, False, False, 0)
+        card.pack_start(quit_button, False, False, 0)
 
         self.add(card)
 
@@ -1916,8 +1921,7 @@ class ReminderApplication(Gtk.Application):
                 self._quit_cleanly,
             )
         self._update_interface()
-        self.control_window.show_all()
-        self.control_window.present()
+        ui.raise_page(self.control_window)
 
     def _pause_from_control(self, seconds: Optional[int]) -> None:
         self._pause_reminders(None, seconds)
@@ -1925,8 +1929,7 @@ class ReminderApplication(Gtk.Application):
     def _open_settings_panel(self, _item) -> None:
         if self.settings_panel is None:
             self.settings_panel = SettingsPanel(self.settings, self._panel_changed)
-        self.settings_panel.show_all()
-        self.settings_panel.present()
+        ui.raise_page(self.settings_panel)
 
     def _panel_changed(self, key: str, value) -> None:
         """Apply one setting from the panel, saving as it changes."""
@@ -2245,8 +2248,7 @@ class ReminderApplication(Gtk.Application):
         if self.stats_window is None:
             self.stats_window = StatsWindow()
         self._refresh_stats_window()
-        self.stats_window.show_all()
-        self.stats_window.present()
+        ui.raise_page(self.stats_window)
         self.stats_window.play_open()
 
     def _refresh_stats_window(self) -> None:

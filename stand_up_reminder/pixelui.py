@@ -16,6 +16,7 @@ gi.require_version("Gtk", "3.0")
 from gi.repository import Gdk, GLib, Gtk
 
 from . import pixels
+from .i18n import _
 from .pixels import ART, PALETTE, ap, rgb
 
 
@@ -466,6 +467,56 @@ def pixel_button(label: str, variant: str = "default") -> Gtk.Button:
     return button
 
 
+class CloseMark(Gtk.DrawingArea):
+    """The window's close mark: a hard pixel cross, drawn on the art grid."""
+
+    def __init__(self, scale: int = ART) -> None:
+        super().__init__()
+        self._scale = scale
+        self._color = PALETTE["mist"]
+        self.set_size_request(6 * scale, 6 * scale)
+        self.connect("draw", self._on_draw)
+
+    def set_color(self, color: str) -> None:
+        if color == self._color:
+            return
+        self._color = color
+        self.queue_draw()
+
+    def _on_draw(self, _area, context) -> bool:
+        context.set_source_rgb(*rgb(self._color))
+        for step in range(6):
+            context.rectangle(
+                step * self._scale, step * self._scale, self._scale, self._scale
+            )
+            context.rectangle(
+                (5 - step) * self._scale, step * self._scale, self._scale, self._scale
+            )
+        context.fill()
+        return False
+
+
+def page_header(title: str, on_close) -> Gtk.Box:
+    """A page's title, with its close mark in the top corner."""
+    row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+    label = pixel_label(title, "pixel-window-title", 0.0)
+    label.set_hexpand(True)
+    row.pack_start(label, True, True, 0)
+
+    button = Gtk.Button()
+    button.get_style_context().add_class("pixel-check")
+    button.set_relief(Gtk.ReliefStyle.NONE)
+    button.set_valign(Gtk.Align.START)
+    button.set_tooltip_text(_("Close"))
+    mark = CloseMark()
+    button.add(mark)
+    button.connect("clicked", on_close)
+    button.connect("enter-notify-event", lambda *_a: mark.set_color(PALETTE["coral"]))
+    button.connect("leave-notify-event", lambda *_a: mark.set_color(PALETTE["mist"]))
+    row.pack_end(button, False, False, 0)
+    return row
+
+
 def pixel_label(text: str, style: str, align: float = 0.5) -> Gtk.Label:
     label = Gtk.Label(label=text)
     label.set_xalign(align)
@@ -473,19 +524,34 @@ def pixel_label(text: str, style: str, align: float = 0.5) -> Gtk.Label:
     return label
 
 
-def ordinary_window(window: Gtk.Window) -> None:
-    """A page of the application: undecorated, but otherwise a normal window.
+def page_window(window: Gtk.Window) -> None:
+    """A page of the application: undecorated, above the desk, still a window.
 
-    The break card has to stay above everything; nothing else does. These
-    windows go behind whatever you click next, keep their place in the
-    window list, and are dragged by their own body, since they carry no
-    title bar to grab.
+    Pages stay above the windows you were already working in — losing one
+    behind a maximised browser reads as having closed it — but they never
+    fight each other: opening one raises it over the others. They are
+    dragged by their own body, since they carry no title bar to grab.
     """
     window.set_decorated(False)
     window.set_resizable(False)
+    window.set_keep_above(True)
     window.set_type_hint(Gdk.WindowTypeHint.NORMAL)
     window.add_events(Gdk.EventMask.BUTTON_PRESS_MASK)
     window.connect("button-press-event", _begin_drag)
+
+
+def raise_page(window: Gtk.Window) -> None:
+    """Show a page and put it in front, even of the app's other pages.
+
+    A page that has only just been mapped is not stacked until the server
+    has caught up, so the request is repeated on the next turn of the loop;
+    without that, opening a page from the top-bar menu left it behind the
+    page that was already open.
+    """
+    window.show_all()
+    window.deiconify()
+    window.present()
+    GLib.timeout_add(50, lambda: (window.present(), GLib.SOURCE_REMOVE)[1])
 
 
 def _begin_drag(window: Gtk.Window, event) -> bool:
