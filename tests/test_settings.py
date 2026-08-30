@@ -196,5 +196,28 @@ class EyeBreakSettingTests(unittest.TestCase):
         )
 
 
+class EyeRotationTests(unittest.TestCase):
+    def test_the_rotation_starts_at_the_beginning(self):
+        self.assertEqual(Settings().eye_rotation_index, 0)
+
+    def test_a_stored_position_is_read_back(self):
+        self.assertEqual(
+            settings_from_payload({"eye_rotation_index": 3}).eye_rotation_index, 3
+        )
+
+    def test_a_position_off_the_end_of_the_rotation_starts_over(self):
+        self.assertEqual(
+            settings_from_payload({"eye_rotation_index": 99}).eye_rotation_index, 0
+        )
+        self.assertEqual(
+            settings_from_payload({"eye_rotation_index": -2}).eye_rotation_index, 0
+        )
+
+    def test_a_value_that_is_not_a_position_is_ignored(self):
+        self.assertEqual(
+            settings_from_payload({"eye_rotation_index": "two"}).eye_rotation_index, 0
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

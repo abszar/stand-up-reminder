@@ -18,6 +18,13 @@ class PromptTests(unittest.TestCase):
         known = {prompt.key for prompt in eyes.PROMPTS}
         self.assertTrue(set(eyes.ROTATION) <= known)
 
+    def test_the_settings_module_bounds_the_rotation_correctly(self):
+        # settings keeps its own length so it need not import this module;
+        # this is what stops the two drifting apart.
+        from stand_up_reminder.settings import EYE_ROTATION_LENGTH
+
+        self.assertEqual(len(eyes.ROTATION), EYE_ROTATION_LENGTH)
+
     def test_looking_far_takes_four_turns_in_six(self):
         self.assertEqual(eyes.ROTATION.count("far"), 4)
         self.assertEqual(len(eyes.ROTATION), 6)

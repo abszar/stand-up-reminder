@@ -2204,7 +2204,6 @@ class ReminderApplication(Gtk.Application):
         self.dock: Optional[DockCard] = None
         self.eye_card: Optional[EyeWindow] = None
         self._eye_seconds = 0
-        self._eye_index = 0
         self._clock = time.monotonic
         self._suppress_menu_events = False
         self._wayland = False
@@ -2965,10 +2964,13 @@ class ReminderApplication(Gtk.Application):
             return
         if self.eye_card is not None and self.eye_card.get_visible():
             return
-        chosen = eyes.next_prompt(self._eye_index, self.settings.muted_prompts)
+        chosen = eyes.next_prompt(
+            self.settings.eye_rotation_index, self.settings.muted_prompts
+        )
         if chosen is None:
             return
-        prompt, self._eye_index = chosen
+        prompt, position = chosen
+        self._save_settings(eye_rotation_index=position)
         if self.eye_card is None:
             self.eye_card = EyeWindow(self._eye_squeezed, self._eye_finished)
         self.eye_card.begin(prompt)

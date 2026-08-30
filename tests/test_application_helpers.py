@@ -325,10 +325,10 @@ class EyeCardTests(unittest.TestCase):
             scheduler=Mock(),
             discreet=False,
             eye_card=Mock(),
-            _eye_index=0,
             _play_sound=Mock(),
             _eye_squeezed=Mock(),
             _eye_finished=Mock(),
+            _save_settings=Mock(),
         )
         app.scheduler.snapshot.return_value = SimpleNamespace(locked=False, phase=phase)
         app.eye_card.get_visible.return_value = False
@@ -369,10 +369,21 @@ class EyeCardTests(unittest.TestCase):
         application.ReminderApplication._show_eye_card(app)
         app.eye_card.begin.assert_not_called()
 
-    def test_the_rotation_moves_on_with_each_card(self):
+    def test_the_rotation_position_is_saved_so_a_restart_does_not_reset_it(self):
         app = self.make_app()
+        app._save_settings = Mock()
+
         application.ReminderApplication._show_eye_card(app)
-        self.assertEqual(app._eye_index, 1)
+
+        app._save_settings.assert_called_once_with(eye_rotation_index=1)
+
+    def test_a_card_picks_up_where_the_stored_position_left_off(self):
+        app = self.make_app(eye_rotation_index=2)
+        app._save_settings = Mock()
+
+        application.ReminderApplication._show_eye_card(app)
+
+        self.assertEqual(app.eye_card.begin.call_args.args[0].key, eyes.ROTATION[2])
 
 
 class CountdownStateTests(unittest.TestCase):

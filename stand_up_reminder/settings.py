@@ -20,6 +20,9 @@ DEFAULT_STANDING_PILL_POSITION = 0.5
 # are the presets the settings page offers.
 DEFAULT_EYE_INTERVAL_SECONDS = 20 * 60
 EYE_INTERVAL_BOUNDS = (15 * 60, 30 * 60)
+# Kept here rather than imported from eyes, which would make the settings
+# module depend on it only to bound one number.
+EYE_ROTATION_LENGTH = 6
 
 WORK_SECONDS_RANGE = (60, 4 * 60 * 60)
 BREAK_SECONDS_RANGE = (15, 60 * 60)
@@ -52,6 +55,10 @@ class Settings:
     # Which of the three eye prompts are switched off, held as the muted set
     # for the same reason as the sounds: a prompt added later shows up.
     muted_prompts: frozenset = frozenset()
+    # Where the prompt rotation had got to. Held here rather than in memory
+    # so that a restart carries on instead of starting at the first prompt
+    # again — a machine rebooted daily would otherwise only ever see it.
+    eye_rotation_index: int = 0
     standing_pill_position: float = DEFAULT_STANDING_PILL_POSITION
 
 
@@ -77,6 +84,14 @@ def _read_fraction(payload: dict, key: str, default: float) -> float:
     if isinstance(raw, bool) or not isinstance(raw, (int, float)):
         return default
     return max(0.0, min(1.0, float(raw)))
+
+
+def _read_index(payload: dict, key: str, length: int) -> int:
+    """A position in a fixed-length rotation, or the start of it."""
+    raw = payload.get(key, 0)
+    if isinstance(raw, bool) or not isinstance(raw, int):
+        return 0
+    return raw if 0 <= raw < length else 0
 
 
 def _read_names(payload: dict, key: str) -> frozenset:
@@ -139,6 +154,7 @@ def settings_from_payload(payload: dict) -> Settings:
             DEFAULT_EYE_INTERVAL_SECONDS,
         ),
         muted_prompts=_read_names(payload, "muted_prompts"),
+        eye_rotation_index=_read_index(payload, "eye_rotation_index", EYE_ROTATION_LENGTH),
         standing_pill_position=_read_fraction(
             payload, "standing_pill_position", DEFAULT_STANDING_PILL_POSITION
         ),
