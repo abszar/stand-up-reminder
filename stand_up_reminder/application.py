@@ -9,6 +9,8 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Mapping, Optional, Sequence
 
+import cairo
+
 import gi
 
 gi.require_version("Gtk", "3.0")
@@ -180,6 +182,34 @@ STANDING_ALERTS = {
     "ask": (PALETTE["amber"], "flat"),
     "urge": (PALETTE["coral"], "down"),
 }
+
+
+# The edge glow: a second's worth of colour bleeding in from the sides of the
+# screen. It is the one thing in the application that eases, because it is not
+# a pixel widget — it is ambient, and a hard on-off at this size reads as a
+# fault rather than a signal.
+GLOW_MS = 1000
+GLOW_FRAME_MS = 40
+GLOW_FRAMES = GLOW_MS // GLOW_FRAME_MS
+GLOW_RISE = 8
+GLOW_HOLD = 13
+GLOW_DEPTH = 110
+GLOW_PEAK = 0.85
+
+
+def glow_alpha(frame: int, frames: int = GLOW_FRAMES) -> float:
+    """One frame of the glow: up, a moment at full, then a longer way down.
+
+    A single arc with no flicker in it. The way out is slower than the way in
+    so that it reads as something receding rather than something switching off.
+    """
+    if frame <= 0 or frame >= frames:
+        return 0.0
+    if frame < GLOW_RISE:
+        return frame / GLOW_RISE
+    if frame < GLOW_HOLD:
+        return 1.0
+    return max(0.0, (frames - frame) / (frames - GLOW_HOLD))
 
 
 def standing_alert(seconds_since_answer: int) -> Optional[str]:
@@ -771,10 +801,11 @@ class StandingPill(Gtk.Window):
         ),
     }
 
-    def __init__(self, on_stop, on_move, on_still=None) -> None:
+    def __init__(self, on_stop, on_move, on_still=None, on_flood=None) -> None:
         super().__init__(type=Gtk.WindowType.TOPLEVEL, title=_("Standing"))
         self._on_move = on_move
         self._on_still = on_still
+        self._on_flood = on_flood
         self._alert: Optional[str] = None
         self._body = PALETTE["ink"]
         self._flash_timer = 0
@@ -913,6 +944,8 @@ class StandingPill(Gtk.Window):
         """Fill the pill with its alert colour, on and off, for two seconds."""
         if self._alert is None:
             return
+        if self._on_flood is not None:
+            self._on_flood(self._rest_color())
         if not ui.animations_enabled():
             self._paint_rest()
             return
@@ -1281,6 +1314,145 @@ class DockCard(Gtk.Window, ui.PixelFrameWindow):
             area.x + area.width - width - self.EDGE_GAP - clearance,
             area.y + area.height - height - self.EDGE_GAP + drop,
         )
+
+
+class GlowStrip(Gtk.Window):
+    """One edge of the glow: a gradient that nothing can click on."""
+
+    def __init__(self, side: str) -> None:
+        super().__init__(type=Gtk.WindowType.TOPLEVEL)
+        self._side = side
+        self._alpha = 0.0
+        self._color = PALETTE["coral"]
+        self.set_decorated(False)
+        self.set_app_paintable(True)
+        self.set_accept_focus(False)
+        self.set_focus_on_map(False)
+        self.set_skip_taskbar_hint(True)
+        self.set_skip_pager_hint(True)
+        self.set_keep_above(True)
+        self.set_type_hint(Gdk.WindowTypeHint.NOTIFICATION)
+        ui.use_rgba_visual(self)
+        self.connect("draw", self._on_draw)
+
+    def set_frame(self, color: str, alpha: float) -> None:
+        self._color = color
+        self._alpha = max(0.0, min(1.0, float(alpha)))
+        self.queue_draw()
+
+    def _on_draw(self, _widget, context) -> bool:
+        width = self.get_allocated_width()
+        height = self.get_allocated_height()
+        context.set_operator(1)  # SOURCE — the strip owns every pixel it covers
+        context.set_source_rgba(0, 0, 0, 0)
+        context.paint()
+        if self._alpha <= 0.0:
+            return False
+        red, green, blue = pixels.rgb(self._color)
+        if self._side == "top":
+            gradient = cairo.LinearGradient(0, 0, 0, height)
+        elif self._side == "bottom":
+            gradient = cairo.LinearGradient(0, height, 0, 0)
+        elif self._side == "left":
+            gradient = cairo.LinearGradient(0, 0, width, 0)
+        else:
+            gradient = cairo.LinearGradient(width, 0, 0, 0)
+        peak = GLOW_PEAK * self._alpha
+        gradient.add_color_stop_rgba(0.0, red, green, blue, peak)
+        gradient.add_color_stop_rgba(0.45, red, green, blue, peak * 0.25)
+        gradient.add_color_stop_rgba(1.0, red, green, blue, 0.0)
+        context.set_source(gradient)
+        context.paint()
+        return False
+
+    def place(self, area) -> None:
+        horizontal = self._side in ("top", "bottom")
+        width = area.width if horizontal else GLOW_DEPTH
+        height = GLOW_DEPTH if horizontal else area.height
+        self.resize(width, height)
+        left = area.x
+        top = area.y
+        if self._side == "bottom":
+            top = area.y + area.height - GLOW_DEPTH
+        elif self._side == "right":
+            left = area.x + area.width - GLOW_DEPTH
+        self.move(left, top)
+
+    def make_click_through(self) -> None:
+        gdk_window = self.get_window()
+        if gdk_window is not None:
+            gdk_window.input_shape_combine_region(cairo.Region(), 0, 0)
+
+
+class EdgeGlow:
+    """The screen's edges, lit for a second when the pill needs finding.
+
+    The pill sits where you are not looking. This puts the same question in
+    peripheral vision on every monitor at once, without covering a pixel of
+    anything: the strips take no focus and pass every click straight through.
+    """
+
+    def __init__(self) -> None:
+        self._strips: list[GlowStrip] = []
+        self._timer = 0
+
+    def _build(self) -> None:
+        display = Gdk.Display.get_default()
+        if display is None:
+            return
+        for index in range(display.get_n_monitors()):
+            area = display.get_monitor(index).get_workarea()
+            for side in ("top", "bottom", "left", "right"):
+                strip = GlowStrip(side)
+                strip.place(area)
+                self._strips.append(strip)
+
+    def flash(self, color: str) -> None:
+        if not self._strips:
+            self._build()
+        if not self._strips:
+            return
+        self._stop()
+        for strip in self._strips:
+            strip.set_frame(color, 0.0)
+            strip.show_all()
+            strip.make_click_through()
+        if not ui.animations_enabled():
+            # No fade to be had, so the signal is simply held for its second.
+            self._paint(1.0)
+            self._timer = GLib.timeout_add(GLOW_MS, self._finish)
+            return
+        frames = list(range(GLOW_FRAMES + 1))
+
+        def step() -> bool:
+            if not frames:
+                return self._finish()
+            self._paint(glow_alpha(frames.pop(0)))
+            return GLib.SOURCE_CONTINUE
+
+        step()
+        self._timer = GLib.timeout_add(GLOW_FRAME_MS, step)
+
+    def _paint(self, alpha: float) -> None:
+        for strip in self._strips:
+            strip.set_frame(strip._color, alpha)
+
+    def _finish(self) -> bool:
+        self._timer = 0
+        for strip in self._strips:
+            strip.hide()
+        return GLib.SOURCE_REMOVE
+
+    def _stop(self) -> None:
+        if self._timer:
+            GLib.source_remove(self._timer)
+            self._timer = 0
+
+    def destroy(self) -> None:
+        self._stop()
+        for strip in self._strips:
+            strip.destroy()
+        self._strips = []
 
 
 class DimmerWindow(Gtk.Window):
@@ -2339,6 +2511,7 @@ class ReminderApplication(Gtk.Application):
         # meeting, and being silently muted for a week is the worse bug.
         self.discreet = False
         self.dock: Optional[DockCard] = None
+        self.glow: Optional[EdgeGlow] = None
         self.eye_card: Optional[EyeWindow] = None
         self._clock = time.monotonic
         self._eye_seconds = 0
@@ -3043,7 +3216,10 @@ class ReminderApplication(Gtk.Application):
         """
         if self.pill is None:
             self.pill = StandingPill(
-                self._sit_down, self._standing_pill_moved, self._still_standing
+                self._sit_down,
+                self._standing_pill_moved,
+                self._still_standing,
+                self._flash_edges,
             )
         if self._standing_since is None:
             self._standing_since = self._clock() - max(0.0, float(already_up))
@@ -3144,6 +3320,19 @@ class ReminderApplication(Gtk.Application):
             snapshot.phase, snapshot.seconds_remaining, snapshot.away_seconds
         )
 
+    def _flash_edges(self, _color: str) -> None:
+        """Light the screen's edges for a second, unless we are being watched.
+
+        Always coral, whichever stage the pill is at. The pill's own amber and
+        coral say how long you have been ignored; the glow only has one job,
+        which is to be seen across a bright screen, and amber is not up to it.
+        """
+        if self.discreet:
+            return
+        if self.glow is None:
+            self.glow = EdgeGlow()
+        self.glow.flash(PALETTE["coral"])
+
     def _still_standing(self) -> None:
         """The user says they are still up: the pill goes quiet for another go."""
         self._standing_answered = self._clock()
@@ -3190,6 +3379,8 @@ class ReminderApplication(Gtk.Application):
             dimmer.destroy()
         if self.pill:
             self.pill.destroy()
+        if self.glow:
+            self.glow.destroy()
         if self.dock:
             self.dock.destroy()
         if self.eye_card:

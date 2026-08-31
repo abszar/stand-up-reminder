@@ -6,6 +6,15 @@ All notable changes to Stand Up Reminder are documented in this file.
 
 ### Added
 
+- **An edge glow for the standing check.** When the pill asks whether you are
+  still up, coral now bleeds in from all four edges of every monitor and
+  fades away again over one second. The pill sits where you are not looking;
+  this puts the same question in peripheral vision wherever you are looking.
+  It covers nothing — the strips are transparent gradients that take no focus
+  and pass every click straight through to whatever is underneath — and it is
+  held back in Discreet mode along with everything else. It is the one thing
+  in the application that eases rather than cutting between frames, because
+  at that size a hard on-off reads as a fault rather than a signal.
 - **Discreet mode**, a switch in the top-bar menu for the minutes somebody
   else is watching your screen. The break moves out of the middle to a card
   in the bottom right corner carrying the count and three buttons and nothing

@@ -456,6 +456,45 @@ class EyeCardTests(unittest.TestCase):
         self.assertEqual(app.eye_card.begin.call_args.args[0].key, eyes.ROTATION[2])
 
 
+class EdgeGlowTests(unittest.TestCase):
+    def curve(self):
+        return [
+            application.glow_alpha(frame)
+            for frame in range(application.GLOW_FRAMES + 1)
+        ]
+
+    def test_the_glow_lasts_one_second(self):
+        self.assertEqual(application.GLOW_MS, 1000)
+        self.assertEqual(
+            application.GLOW_FRAMES * application.GLOW_FRAME_MS, application.GLOW_MS
+        )
+
+    def test_it_starts_and_ends_at_nothing(self):
+        curve = self.curve()
+        self.assertEqual(curve[0], 0.0)
+        self.assertEqual(curve[-1], 0.0)
+
+    def test_it_reaches_full_strength_in_the_middle(self):
+        self.assertEqual(max(self.curve()), 1.0)
+
+    def test_it_never_leaves_the_range(self):
+        for alpha in self.curve():
+            self.assertGreaterEqual(alpha, 0.0)
+            self.assertLessEqual(alpha, 1.0)
+
+    def test_it_rises_once_and_falls_once_and_never_flickers(self):
+        # The whole point of the change: one smooth arc, not a blink.
+        curve = self.curve()
+        peak = curve.index(max(curve))
+        self.assertEqual(curve[:peak + 1], sorted(curve[:peak + 1]))
+        self.assertEqual(curve[peak:], sorted(curve[peak:], reverse=True))
+
+    def test_the_fade_out_is_longer_than_the_fade_in(self):
+        curve = self.curve()
+        peak = curve.index(max(curve))
+        self.assertLess(peak, len(curve) - 1 - curve[::-1].index(max(curve)))
+
+
 class StandingAlertTests(unittest.TestCase):
     def test_a_freshly_answered_pill_is_calm(self):
         self.assertIsNone(application.standing_alert(0))
