@@ -173,6 +173,29 @@ STANDING_CHECK_SECONDS = 10 * 60
 STANDING_MOVE_SECONDS = 30 * 60
 
 
+# What the pill looks like when its question has gone unanswered. A blink is
+# no use here: forgetting to close the pill means you were not looking at it,
+# so the ask has to be a state that waits rather than an event you can miss.
+STANDING_ALERTS = {
+    "ask": (PALETTE["amber"], "flat"),
+    "urge": (PALETTE["coral"], "down"),
+}
+
+
+def standing_alert(seconds_since_answer: int) -> Optional[str]:
+    """How insistent the pill should look, given how long since you answered.
+
+    It never lapses back to calm on its own. An unanswered pill holds the
+    work interval indefinitely and no break falls due at all, so the failure
+    it guards against is the expensive one.
+    """
+    if seconds_since_answer < STANDING_CHECK_SECONDS:
+        return None
+    if seconds_since_answer < 2 * STANDING_CHECK_SECONDS:
+        return "ask"
+    return "urge"
+
+
 def standing_cue(previous: int, current: int) -> Optional[str]:
     """The pulse the pill owes as its clock passes from one reading to the next.
 
@@ -723,6 +746,16 @@ class StandingPill(Gtk.Window):
     BOB_MS = 500
     PULSE_MS = 120
     PULSE_STILL_MS = 1_500
+    # A held colour is easy to overlook on a pill the width of a thumb, so
+    # entering an alert floods the whole body with it for a couple of
+    # seconds first. The eye catches a filled shape changing; it does not
+    # catch a four-pixel ring.
+    FLASH_MS = 200
+    FLASH_FRAMES = 13
+    # A held colour is easy to stop seeing, so the flood comes back — but on
+    # the same ten minutes the question itself runs on. Any oftener and it is
+    # a strobe rather than a reminder.
+    REFLASH_SECONDS = STANDING_CHECK_SECONDS
     # Each pulse ends on the resting sky ring, so a blink is the colour it
     # arrives in and the number of times it comes back.
     PULSE_FRAMES = {
@@ -738,9 +771,15 @@ class StandingPill(Gtk.Window):
         ),
     }
 
-    def __init__(self, on_stop, on_move) -> None:
+    def __init__(self, on_stop, on_move, on_still=None) -> None:
         super().__init__(type=Gtk.WindowType.TOPLEVEL, title=_("Standing"))
         self._on_move = on_move
+        self._on_still = on_still
+        self._alert: Optional[str] = None
+        self._body = PALETTE["ink"]
+        self._flash_timer = 0
+        self._reflash_timer = 0
+        self._drag_moved = False
         self._fraction = 0.5
         self._drag_offset: Optional[float] = None
         self._rows: tuple[str, ...] = ("00", "00")
@@ -812,7 +851,7 @@ class StandingPill(Gtk.Window):
                 rule.connect("draw", self._draw_rule)
                 self.digit_rows.pack_start(rule, False, False, 0)
             digits = ui.SpriteDigits(scale=self.DIGIT_SCALE)
-            digits.set_text(text, PALETTE["bone"])
+            digits.set_text(text, self._digit_color())
             digits.set_halign(Gtk.Align.CENTER)
             self.digit_rows.pack_start(digits, False, False, 0)
             self._digit_widgets.append(digits)
@@ -840,7 +879,94 @@ class StandingPill(Gtk.Window):
         else:
             self._rows = rows
             for widget, text in zip(self._digit_widgets, rows):
-                widget.set_text(text, PALETTE["bone"])
+                widget.set_text(text, self._digit_color())
+
+    def set_alert(self, alert: Optional[str]) -> None:
+        """Hold a colour until the question is answered, and flash on arrival."""
+        if alert == self._alert:
+            return
+        self._alert = alert
+        self._stop_pulse()
+        self._stop_flash()
+        self.set_tooltip_text(
+            _("Still standing? Click to say yes")
+            if alert
+            else _("Drag to move · click the cross to sit down")
+        )
+        if alert is None:
+            self._paint_rest()
+            return
+        self._flash_alert()
+        # A flash missed is a flash lost, so it comes back while unanswered.
+        self._reflash_timer = GLib.timeout_add_seconds(
+            self.REFLASH_SECONDS, self._reflash
+        )
+
+    def _reflash(self) -> bool:
+        if self._alert is None:
+            self._reflash_timer = 0
+            return GLib.SOURCE_REMOVE
+        self._flash_alert()
+        return GLib.SOURCE_CONTINUE
+
+    def _flash_alert(self) -> None:
+        """Fill the pill with its alert colour, on and off, for two seconds."""
+        if self._alert is None:
+            return
+        if not ui.animations_enabled():
+            self._paint_rest()
+            return
+        frames = [index % 2 == 0 for index in range(self.FLASH_FRAMES)]
+        self._paint_flash(frames.pop(0))
+
+        def step() -> bool:
+            if not frames or self._alert is None:
+                self._flash_timer = 0
+                self._paint_rest()
+                return GLib.SOURCE_REMOVE
+            self._paint_flash(frames.pop(0))
+            return GLib.SOURCE_CONTINUE
+
+        self._flash_timer = GLib.timeout_add(self.FLASH_MS, step)
+
+    def _paint_flash(self, lit: bool) -> None:
+        """One flash frame: the body floods, and the marks invert to stay read."""
+        color = self._rest_color()
+        self._ring = color
+        self._body = color if lit else PALETTE["ink"]
+        ink = PALETTE["void"] if lit else color
+        self.face.set_face(STANDING_ALERTS[self._alert][1], ink)
+        for widget, text in zip(self._digit_widgets, self._rows):
+            widget.set_text(text, ink)
+        self.queue_draw()
+
+    def _stop_flash(self) -> None:
+        for name in ("_flash_timer", "_reflash_timer"):
+            timer = getattr(self, name)
+            if timer:
+                GLib.source_remove(timer)
+                setattr(self, name, 0)
+
+    def _rest_color(self) -> str:
+        if self._alert is None:
+            return PALETTE["sky"]
+        return STANDING_ALERTS[self._alert][0]
+
+    def _paint_rest(self) -> None:
+        """Return the ring and the face to whatever the current state is."""
+        self._ring = self._rest_color()
+        self._body = PALETTE["ink"]
+        if self._alert is None:
+            self.face.set_face("rest" if self._bob == 0 else "blink", PALETTE["sky"])
+        else:
+            face = STANDING_ALERTS[self._alert][1]
+            self.face.set_face(face, self._rest_color())
+        for widget, text in zip(self._digit_widgets, self._rows):
+            widget.set_text(text, self._digit_color())
+        self.queue_draw()
+
+    def _digit_color(self) -> str:
+        return PALETTE["bone"] if self._alert is None else self._rest_color()
 
     def _flash_ring(self) -> None:
         """A short sky-bone-sky flash rewards passing the hour."""
@@ -886,7 +1012,7 @@ class StandingPill(Gtk.Window):
 
     def _end_still_pulse(self) -> bool:
         self._pulse_timer = 0
-        self._ring = PALETTE["sky"]
+        self._ring = self._rest_color()
         self.queue_draw()
         return GLib.SOURCE_REMOVE
 
@@ -894,7 +1020,7 @@ class StandingPill(Gtk.Window):
         if self._pulse_timer:
             GLib.source_remove(self._pulse_timer)
             self._pulse_timer = 0
-        self._ring = PALETTE["sky"]
+        self._ring = self._rest_color()
         self.queue_draw()
 
     def _on_draw(self, _widget, context) -> bool:
@@ -904,7 +1030,7 @@ class StandingPill(Gtk.Window):
         context.set_source_rgb(*pixels.rgb(self._ring))
         context.rectangle(0, 0, width, height)
         context.fill()
-        context.set_source_rgb(*pixels.rgb(PALETTE["ink"]))
+        context.set_source_rgb(*pixels.rgb(self._body))
         context.rectangle(ART, ART, width - 2 * ART, height - 2 * ART)
         context.fill()
         context.set_operator(2)
@@ -921,6 +1047,7 @@ class StandingPill(Gtk.Window):
     def hide(self) -> None:  # noqa: A003 - matches Gtk.Widget.hide
         self._stop_bob()
         self._stop_pulse()
+        self._stop_flash()
         super().hide()
 
     def _start_bob(self) -> None:
@@ -936,6 +1063,8 @@ class StandingPill(Gtk.Window):
 
     def _next_bob(self) -> bool:
         self._bob = 1 - self._bob
+        if self._alert is not None:
+            return GLib.SOURCE_CONTINUE
         self.face.set_face(
             "rest" if self._bob == 0 else "blink", PALETTE["sky"]
         )
@@ -977,6 +1106,7 @@ class StandingPill(Gtk.Window):
             return False
         _x, y = self.get_position()
         self._drag_offset = event.y_root - y
+        self._drag_moved = False
         self._ring = PALETTE["bone"]
         self.queue_draw()
         return True
@@ -990,6 +1120,7 @@ class StandingPill(Gtk.Window):
         width, height = self.get_size()
         top = int(event.y_root - self._drag_offset) - geometry.y
         top = max(0, min(max(0, geometry.height - height), top))
+        self._drag_moved = True
         self._fraction = pill_fraction(top, geometry.height, height)
         self.move(
             geometry.x + geometry.width - width - PILL_EDGE_GAP,
@@ -1001,9 +1132,14 @@ class StandingPill(Gtk.Window):
         if self._drag_offset is None:
             return False
         self._drag_offset = None
-        self._ring = PALETTE["sky"]
-        self.queue_draw()
-        self._on_move(self._fraction)
+        moved = self._drag_moved
+        self._paint_rest()
+        if moved:
+            self._on_move(self._fraction)
+        elif self._on_still is not None:
+            # A press that went nowhere is a click, and a click on the body
+            # is the only way to say "still up" without any button for it.
+            self._on_still()
         return True
 
 
@@ -2198,6 +2334,7 @@ class ReminderApplication(Gtk.Application):
         self._idle_credit_pending = False
         self._standing_since: Optional[float] = None
         self._standing_seconds = 0
+        self._standing_answered = 0.0
         # Discreet is deliberately not saved: it is switched on for a
         # meeting, and being silently muted for a week is the worse bug.
         self.discreet = False
@@ -2905,10 +3042,13 @@ class ReminderApplication(Gtk.Application):
         starting a fresh one — that is what "keep count" means.
         """
         if self.pill is None:
-            self.pill = StandingPill(self._sit_down, self._standing_pill_moved)
+            self.pill = StandingPill(
+                self._sit_down, self._standing_pill_moved, self._still_standing
+            )
         if self._standing_since is None:
             self._standing_since = self._clock() - max(0.0, float(already_up))
             self._standing_seconds = int(self._clock() - self._standing_since)
+            self._standing_answered = self._clock()
         # Time on your feet is the break, so the work interval waits.
         self.scheduler.set_standing(True)
         self.pill.set_seconds(int(self._clock() - self._standing_since))
@@ -3004,13 +3144,21 @@ class ReminderApplication(Gtk.Application):
             snapshot.phase, snapshot.seconds_remaining, snapshot.away_seconds
         )
 
+    def _still_standing(self) -> None:
+        """The user says they are still up: the pill goes quiet for another go."""
+        self._standing_answered = self._clock()
+        if self.pill is not None:
+            self.pill.set_alert(None)
+
     def _refresh_standing_pill(self) -> None:
         if self._standing_since is None or self.pill is None:
             return
-        seconds = int(self._clock() - self._standing_since)
+        now = self._clock()
+        seconds = int(now - self._standing_since)
         cue = standing_cue(self._standing_seconds, seconds)
         self._standing_seconds = seconds
         self.pill.set_seconds(seconds)
+        self.pill.set_alert(standing_alert(int(now - self._standing_answered)))
         if cue is not None:
             self.pill.pulse(cue)
 

@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Stand Up Reminder 1.2.0\n"
 "Report-Msgid-Bugs-To: https://github.com/abszar/stand-up-reminder/issues\n"
-"POT-Creation-Date: 2026-08-30 16:09+0200\n"
+"POT-Creation-Date: 2026-08-31 10:41+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE\n"
@@ -166,6 +166,14 @@ msgstr ""
 
 #: stand_up_reminder/application.py
 msgid "Sit down — restarts the work timer"
+msgstr ""
+
+#: stand_up_reminder/application.py
+msgid "Still standing? Click to say yes"
+msgstr ""
+
+#: stand_up_reminder/application.py
+msgid "Drag to move · click the cross to sit down"
 msgstr ""
 
 #: stand_up_reminder/application.py

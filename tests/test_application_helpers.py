@@ -456,6 +456,34 @@ class EyeCardTests(unittest.TestCase):
         self.assertEqual(app.eye_card.begin.call_args.args[0].key, eyes.ROTATION[2])
 
 
+class StandingAlertTests(unittest.TestCase):
+    def test_a_freshly_answered_pill_is_calm(self):
+        self.assertIsNone(application.standing_alert(0))
+        self.assertIsNone(application.standing_alert(599))
+
+    def test_after_ten_minutes_it_asks_and_keeps_asking(self):
+        self.assertEqual(application.standing_alert(600), "ask")
+        self.assertEqual(application.standing_alert(900), "ask")
+        self.assertEqual(application.standing_alert(1199), "ask")
+
+    def test_a_second_unanswered_interval_turns_urgent(self):
+        self.assertEqual(application.standing_alert(1200), "urge")
+        self.assertEqual(application.standing_alert(4000), "urge")
+
+    def test_the_state_never_lapses_back_to_calm_on_its_own(self):
+        # This is the whole point: a blink you miss is a blink you have lost.
+        states = [application.standing_alert(s) for s in range(600, 5000, 37)]
+        self.assertNotIn(None, states)
+
+    def test_each_state_has_a_colour_and_a_face(self):
+        for state in ("ask", "urge"):
+            with self.subTest(state):
+                self.assertIn(state, application.STANDING_ALERTS)
+                colour, face = application.STANDING_ALERTS[state]
+                self.assertTrue(colour)
+                self.assertTrue(face)
+
+
 class CountdownStateTests(unittest.TestCase):
     def test_the_clock_reddens_in_the_last_ten_seconds(self):
         self.assertTrue(application.is_urgent(10))
@@ -907,10 +935,34 @@ class StandingCoordinatorTests(unittest.TestCase):
         self.assertEqual(coordinator._standing_since, 455.0)
         coordinator.pill.set_seconds.assert_called_once_with(45)
 
+    def test_answering_the_pill_clears_the_alert(self):
+        coordinator = SimpleNamespace(
+            pill=Mock(), _standing_since=0.0, _standing_seconds=0,
+            _standing_answered=0.0, _clock=lambda: 900.0,
+        )
+        application.ReminderApplication._still_standing(coordinator)
+        self.assertEqual(coordinator._standing_answered, 900.0)
+
+    def test_an_unanswered_pill_is_told_to_keep_asking(self):
+        coordinator = SimpleNamespace(
+            pill=Mock(), _standing_since=0.0, _standing_seconds=700,
+            _standing_answered=0.0, _clock=lambda: 701.0,
+        )
+        application.ReminderApplication._refresh_standing_pill(coordinator)
+        coordinator.pill.set_alert.assert_called_with("ask")
+
+    def test_a_pill_answered_a_moment_ago_is_left_calm(self):
+        coordinator = SimpleNamespace(
+            pill=Mock(), _standing_since=0.0, _standing_seconds=700,
+            _standing_answered=690.0, _clock=lambda: 701.0,
+        )
+        application.ReminderApplication._refresh_standing_pill(coordinator)
+        coordinator.pill.set_alert.assert_called_with(None)
+
     def test_the_pill_pulses_when_a_cue_falls_due(self):
         coordinator = SimpleNamespace(
             pill=Mock(), _standing_since=0.0, _standing_seconds=599,
-            _clock=lambda: 600.0,
+            _standing_answered=600.0, _clock=lambda: 600.0,
         )
 
         application.ReminderApplication._refresh_standing_pill(coordinator)
@@ -921,7 +973,7 @@ class StandingCoordinatorTests(unittest.TestCase):
     def test_the_pill_is_left_unpulsed_between_cues(self):
         coordinator = SimpleNamespace(
             pill=Mock(), _standing_since=0.0, _standing_seconds=100,
-            _clock=lambda: 101.0,
+            _standing_answered=101.0, _clock=lambda: 101.0,
         )
 
         application.ReminderApplication._refresh_standing_pill(coordinator)
@@ -931,7 +983,7 @@ class StandingCoordinatorTests(unittest.TestCase):
     def test_the_pill_shows_the_time_since_standing_began(self):
         coordinator = SimpleNamespace(
             pill=Mock(), _standing_since=100.0, _standing_seconds=0,
-            _clock=lambda: 175.4,
+            _standing_answered=175.4, _clock=lambda: 175.4,
         )
 
         application.ReminderApplication._refresh_standing_pill(coordinator)
