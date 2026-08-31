@@ -5,28 +5,67 @@ you to take a standing break after each work interval. It runs as a
 lightweight GTK application with a top-bar indicator and an always-on-top
 break window.
 
+## Look
+
+The interface is an 8-bit pixel HUD: one eleven-colour palette, a bitmap face
+(Silkscreen, shipped with the application), display digits drawn as sprites,
+and hard four-pixel frames with cut corners. Nothing eases — the countdown
+blinks and shudders, the progress bar dies a cell at a time, the card wipes
+open in six bands, and a mint burst marks a break you kept. Every motion is
+dropped when the desktop asks for reduced animation, though the colours that
+carry urgency, success and failure always stay.
+
 ## Features
 
 - Configurable work intervals and break lengths, defaulting to a 30-minute
   interval and a two-minute break.
 - Countdown to the next break shown next to the top-bar icon.
-- The break window opens 15 seconds early with a countdown to the break.
+- The break window opens 15 seconds early with a countdown that reddens as
+  the break approaches, offering the same snooze and skip actions.
 - **Pause reminders** for 30 minutes, an hour, or until you resume.
 - Repeatable snooze that returns with a fresh break countdown.
 - **Skip this break** action that immediately starts a new work interval.
+- **Standing mode** for standing desks: answer the break by standing, and
+  a small pill on the right edge counts how long you have been up. Drag it
+  up or down the edge; it reopens where you left it, and closes when you
+  sit back down.
 - Explicit return confirmation after a completed break, with an
   **I didn't take this break** button for breaks that slipped by.
 - Long stretches away from the keyboard count as a break already taken, after
   a configurable threshold (10 minutes by default).
 - Daily counts of breaks taken, time-away credits, missed, skipped, and
   snoozed.
-- A **Statistics** popup with the day, the last seven days, and an
-  adherence score for the week; the break window carries the day and week
-  scores with a mood emoji.
-- A day timeline on both popups: one colored dot per break outcome, placed
-  by time of day.
-- Keyboard shortcuts and optional sound cues.
-- Other monitors dim while the break window is showing.
+- A **Score** window with the week's adherence in sprite digits, a verdict,
+  the day timeline, and twelve weeks of tiles; the break card carries the day
+  and week scores beside a face whose colour is the verdict.
+- A day timeline on both surfaces: one colored mark per break outcome, placed
+  by time of day, with a bone mark for now.
+- A contribution-style grid of the last twelve weeks, each day shaded by
+  how well its breaks were kept.
+- A pixel **control window**, opened from the top-bar menu, carrying every
+  action: start a break, restart the timer, start or stop the standing
+  counter, pause, and the score, settings and quit.
+- A **Settings** panel in the same pixel language for the durations, the
+  counting rules and the away credit, which keeps the top-bar menu down to
+  the handful of actions you use while working.
+- **Eye breaks** on their own clock: every twenty minutes a small card asks
+  for twenty seconds and then closes itself. It never dims, never takes
+  focus, and never lands on top of a break card. Three prompts share the
+  rotation — look out a window, close your eyes for three firm squeezes and
+  a rest, and walk your eyes around a ring — weighted towards looking into
+  the distance, which is the part with the clearest evidence behind it.
+- **Discreet mode**, a switch in the top-bar menu for when somebody else is
+  watching your screen. The break moves to a small card in the bottom right
+  corner, the dimmer is dropped, eye cards are held back and the application
+  goes silent. It changes no setting and resets to normal when the
+  application restarts.
+- Chiptune sound cues shipped with the application: a call when the break
+  arrives, a settle when it is over, a fanfare for a break kept, and one per
+  eye prompt. A master switch silences everything; each cue also has a row
+  of its own.
+- Keyboard shortcuts.
+- Other monitors dim while the break window is showing (except in Discreet
+  mode).
 - Active-time or wall-clock handling for lock and suspend periods.
 - Automatic startup at graphical login.
 - English and French interface text.
@@ -73,8 +112,10 @@ sudo apt install \
   gettext
 ```
 
-Sound cues additionally require `gir1.2-gsound-1.0`. Without it the
-application runs normally and the sound option has no effect.
+The sounds shipped with the application play through `paplay` or `aplay`,
+which Ubuntu already has. Installing `gir1.2-gsound-1.0` routes them through
+GSound instead, which is only needed for cues drawn from the desktop's own
+sound theme.
 
 #### 2. Clone and install
 
@@ -125,8 +166,9 @@ button. `Esc` does not dismiss the break.
 
 ## Settings
 
-Durations, timing mode, and the options below are set from the indicator menu
-and stored in `~/.config/stand-up-reminder/settings.json`. Values outside the
+Durations, timing mode, and the options below are set from the Settings panel
+in the control window and stored in
+`~/.config/stand-up-reminder/settings.json`. Values outside the
 menu presets can be set by editing that file; out-of-range values are clamped
 when it is read.
 
@@ -139,11 +181,19 @@ when it is read.
 | `idle_credit_seconds` | Idle time before an absence counts as a break; never shorter than the break length |
 | `idle_reset_enabled` | Count time away from the keyboard as a break |
 | `show_countdown` | Show the countdown next to the top-bar icon |
-| `sound_enabled` | Play a sound when a break starts and ends |
+| `sound_enabled` | Master switch for every sound the application makes |
+| `muted_sounds` | Names of individual cues to silence, e.g. `["break_done"]` |
+| `eye_breaks_enabled` | Show the eye-break card on a timer |
+| `eye_interval_seconds` | How often an eye card appears; 15, 20 or 30 minutes |
+| `muted_prompts` | Eye prompts to skip, from `far`, `shut` and `move` |
+| `eye_rotation_index` | Where the eye prompt rotation has got to |
+| `standing_pill_position` | Where the standing pill sits on the right edge |
 | `timing_mode` | `active` or `wall`, described below |
 
 Daily break counts are kept in
-`~/.local/share/stand-up-reminder/stats.json` for the last 30 days.
+`~/.local/share/stand-up-reminder/stats.json` for the last twelve weeks.
+Individual break times, which feed the day timeline, are kept for the last
+week only.
 
 ## Timing modes
 
