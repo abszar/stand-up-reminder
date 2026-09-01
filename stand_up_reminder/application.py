@@ -188,11 +188,14 @@ STANDING_ALERTS = {
 # screen. It is the one thing in the application that eases, because it is not
 # a pixel widget — it is ambient, and a hard on-off at this size reads as a
 # fault rather than a signal.
-GLOW_MS = 1000
+GLOW_MS = 3000
 GLOW_FRAME_MS = 40
 GLOW_FRAMES = GLOW_MS // GLOW_FRAME_MS
-GLOW_RISE = 8
-GLOW_HOLD = 13
+# Six tenths of a second to arrive, a second and a fifth at full, and a longer
+# way out again. Most of the three seconds is spent at full strength: the
+# point is to be seen by someone who was looking elsewhere when it began.
+GLOW_RISE = 15
+GLOW_HOLD = 45
 GLOW_DEPTH = 110
 GLOW_PEAK = 0.85
 

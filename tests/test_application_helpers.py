@@ -239,6 +239,16 @@ class DiscreetModeTests(unittest.TestCase):
                 self.assertTrue(application.sound_allowed(settings, cue))
                 self.assertFalse(application.sound_allowed(settings, cue, True))
 
+    def test_discreet_holds_the_edge_glow_back(self):
+        app = SimpleNamespace(discreet=True, glow=Mock())
+        application.ReminderApplication._flash_edges(app, PALETTE["coral"])
+        app.glow.flash.assert_not_called()
+
+    def test_the_glow_fires_normally_outside_discreet(self):
+        app = SimpleNamespace(discreet=False, glow=Mock())
+        application.ReminderApplication._flash_edges(app, PALETTE["amber"])
+        app.glow.flash.assert_called_once_with(PALETTE["coral"])
+
     def test_discreet_holds_the_eye_cards_back(self):
         app = SimpleNamespace(
             settings=Settings(),
@@ -463,11 +473,16 @@ class EdgeGlowTests(unittest.TestCase):
             for frame in range(application.GLOW_FRAMES + 1)
         ]
 
-    def test_the_glow_lasts_one_second(self):
-        self.assertEqual(application.GLOW_MS, 1000)
+    def test_the_glow_lasts_three_seconds(self):
+        self.assertEqual(application.GLOW_MS, 3000)
         self.assertEqual(
             application.GLOW_FRAMES * application.GLOW_FRAME_MS, application.GLOW_MS
         )
+
+    def test_it_spends_most_of_its_time_at_full_strength(self):
+        curve = self.curve()
+        full = [alpha for alpha in curve if alpha == 1.0]
+        self.assertGreaterEqual(len(full) * application.GLOW_FRAME_MS, 1000)
 
     def test_it_starts_and_ends_at_nothing(self):
         curve = self.curve()

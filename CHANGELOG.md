@@ -8,7 +8,8 @@ All notable changes to Stand Up Reminder are documented in this file.
 
 - **An edge glow for the standing check.** When the pill asks whether you are
   still up, coral now bleeds in from all four edges of every monitor and
-  fades away again over one second. The pill sits where you are not looking;
+  fades away again over three seconds — most of that at full strength, since
+  the point is to be seen by someone who was looking elsewhere when it began. The pill sits where you are not looking;
   this puts the same question in peripheral vision wherever you are looking.
   It covers nothing — the strips are transparent gradients that take no focus
   and pass every click straight through to whatever is underneath — and it is
