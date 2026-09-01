@@ -560,6 +560,161 @@ def pixel_button(label: str, variant: str = "default") -> Gtk.Button:
     return button
 
 
+# Settings icons, authored as pixels rather than shipped as art. Each is seven
+# art pixels square, which is the smallest grid that still reads as a shape at
+# a glance — the whole reason they are here is to be found without reading.
+GLYPHS = {
+    "clock": (
+        "..###..",
+        ".#...#.",
+        "#..#..#",
+        "#..##.#",
+        "#.....#",
+        ".#...#.",
+        "..###..",
+    ),
+    "cup": (
+        ".......",
+        "######.",
+        "#....#.",
+        "#....##",
+        "#....#.",
+        ".####..",
+        ".......",
+    ),
+    "chart": (
+        ".......",
+        ".....#.",
+        "...#.#.",
+        "...#.#.",
+        ".#.#.#.",
+        ".#.#.#.",
+        "#######",
+    ),
+    "cursor": (
+        "#......",
+        "##.....",
+        "###....",
+        "####...",
+        "#####..",
+        "##.##..",
+        "....##.",
+    ),
+    "door": (
+        "#####..",
+        "#...#..",
+        "#...#..",
+        "#..##..",
+        "#...#..",
+        "#...#..",
+        "#####..",
+    ),
+    "topbar": (
+        "#######",
+        "#######",
+        ".......",
+        "#.....#",
+        "#.....#",
+        "#.....#",
+        "#######",
+    ),
+    "eye": (
+        ".......",
+        ".#####.",
+        "#..#..#",
+        "#.###.#",
+        "#..#..#",
+        ".#####.",
+        ".......",
+    ),
+    "window": (
+        "#######",
+        "#..#..#",
+        "#..#..#",
+        "#######",
+        "#..#..#",
+        "#..#..#",
+        "#######",
+    ),
+    "eyeshut": (
+        ".......",
+        ".......",
+        ".#####.",
+        "#######",
+        ".#...#.",
+        ".......",
+        ".......",
+    ),
+    "arrows": (
+        ".......",
+        "..#.#..",
+        ".##.##.",
+        "#######",
+        ".##.##.",
+        "..#.#..",
+        ".......",
+    ),
+    "speaker": (
+        "...##..",
+        "..###..",
+        "###.#.#",
+        "###.#..",
+        "###.#.#",
+        "..###..",
+        "...##..",
+    ),
+    "note": (
+        "....##.",
+        "....##.",
+        "...###.",
+        "...#.#.",
+        ".###.#.",
+        ".###...",
+        ".#.....",
+    ),
+    "hourglass": (
+        "#######",
+        ".#####.",
+        "..###..",
+        "...#...",
+        "..###..",
+        ".#####.",
+        "#######",
+    ),
+}
+GLYPH_SIZE = 7
+
+
+class GlyphMark(Gtk.DrawingArea):
+    """One settings icon, painted from its pixel table in a single colour."""
+
+    def __init__(self, name: str, color: str = PALETTE["mist"], scale: int = ART):
+        super().__init__()
+        self._rows = GLYPHS[name]
+        self._color = color
+        self._scale = scale
+        self.set_size_request(GLYPH_SIZE * scale, GLYPH_SIZE * scale)
+        self.set_valign(Gtk.Align.CENTER)
+        self.connect("draw", self._on_draw)
+
+    def set_color(self, color: str) -> None:
+        if color == self._color:
+            return
+        self._color = color
+        self.queue_draw()
+
+    def _on_draw(self, _area, context) -> bool:
+        context.set_source_rgb(*rgb(self._color))
+        for y, row in enumerate(self._rows):
+            for x, cell in enumerate(row):
+                if cell != ".":
+                    context.rectangle(
+                        x * self._scale, y * self._scale, self._scale, self._scale
+                    )
+        context.fill()
+        return False
+
+
 class FoldMark(Gtk.DrawingArea):
     """A hard pixel triangle: pointing right when shut, down when open."""
 

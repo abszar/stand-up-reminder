@@ -54,6 +54,9 @@ All notable changes to Stand Up Reminder are documented in this file.
 
 ### Fixed
 
+- Saying *I'm back* from the menu now closes whichever surface is carrying the
+  break rather than only the centred card, so it works in Discreet mode too,
+  and sounds the same fanfare the break card's own button does.
 - **The standing pill's "still there?" check was invisible.** It lit the ring
   for 120 milliseconds once every ten minutes — but forgetting to close the
   pill means you were not looking at it, so a flash that short could never
@@ -78,6 +81,16 @@ All notable changes to Stand Up Reminder are documented in this file.
 
 ### Changed
 
+- **Every settings row now carries an icon**, drawn as pixels in code rather
+  than shipped as art: a clock for the work interval, a cup for the break, a
+  cursor for active-only counting, a door for leaving the desk, a window and
+  a shut eye and a pair of arrows for the three eye prompts, and so on. The
+  five headings are coloured — amber, mint, sky, plum, coral — and a row's own
+  icon stays grey until the row is switched on, then takes its heading's
+  colour. Colour says what is on; shape says what it is.
+- **The top-bar menu carries the two actions worth reaching without opening a
+  window:** *I'm back — restart the timer*, which greys out when there is no
+  break to come back from, and *Statistics*. The control window keeps both.
 - The list of sounds in the settings page folds away behind one line. It has
   a row per declared cue and grows every time a sound is added, which is a
   lot of panel for a list you set once.

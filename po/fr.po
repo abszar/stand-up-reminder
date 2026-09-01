@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Stand Up Reminder 1.2.0\n"
 "Report-Msgid-Bugs-To: https://github.com/abszar/stand-up-reminder/issues\n"
-"POT-Creation-Date: 2026-08-31 10:41+0200\n"
+"POT-Creation-Date: 2026-09-01 14:28+0200\n"
 "PO-Revision-Date: 2026-07-20 23:40+0200\n"
 "Last-Translator: Automatically generated\n"
 "Language-Team: none\n"
@@ -392,6 +392,10 @@ msgid "Next break in 30:00"
 msgstr "Prochaine pause dans 30:00"
 
 #: stand_up_reminder/application.py
+msgid "Statistics"
+msgstr "Statistiques"
+
+#: stand_up_reminder/application.py
 msgid "Discreet mode"
 msgstr "Mode discret"
 
@@ -563,9 +567,6 @@ msgstr "On en prend un peu plus ?"
 
 #~ msgid "T if you're standing"
 #~ msgstr "T si vous êtes debout"
-
-#~ msgid "Statistics"
-#~ msgstr "Statistiques"
 
 #~ msgid "This week"
 #~ msgstr "Cette semaine"

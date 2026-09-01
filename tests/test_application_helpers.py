@@ -231,6 +231,38 @@ class SoundPlayerTests(unittest.TestCase):
         self.assertEqual(application.sound_player(lambda _name: None), "")
 
 
+class ResetFromMenuTests(unittest.TestCase):
+    def make_app(self, phase):
+        app = SimpleNamespace(
+            scheduler=Mock(),
+            _record_outcome=Mock(),
+            _play_sound=Mock(),
+            _close_break_surfaces=Mock(),
+            _update_interface=Mock(),
+        )
+        app.scheduler.snapshot.return_value = SimpleNamespace(phase=phase)
+        app.scheduler.reset_work_interval.return_value = True
+        return app
+
+    def test_saying_you_are_back_counts_the_break_and_sounds_the_fanfare(self):
+        app = self.make_app(Phase.AWAITING_RETURN)
+        application.ReminderApplication._reset_work_interval(app, None)
+        app._record_outcome.assert_called_once_with(application.BreakOutcome.TAKEN)
+        app._play_sound.assert_called_once_with(application.EYE_CUES["break_kept"])
+
+    def test_it_closes_whichever_surface_is_carrying_the_break(self):
+        app = self.make_app(Phase.AWAITING_RETURN)
+        application.ReminderApplication._reset_work_interval(app, None)
+        app._close_break_surfaces.assert_called_once_with()
+
+    def test_restarting_a_timer_mid_work_counts_nothing(self):
+        app = self.make_app(Phase.WORK)
+        application.ReminderApplication._reset_work_interval(app, None)
+        app._record_outcome.assert_not_called()
+        app._play_sound.assert_not_called()
+        app._close_break_surfaces.assert_not_called()
+
+
 class DiscreetModeTests(unittest.TestCase):
     def test_discreet_silences_every_cue_whatever_the_settings_say(self):
         settings = Settings(sound_enabled=True)

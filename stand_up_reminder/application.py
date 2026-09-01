@@ -73,6 +73,36 @@ PAUSE_PRESETS = (30 * 60, 60 * 60)
 # The pill sits flush against the right screen edge.
 PILL_EDGE_GAP = 0
 
+# One icon per settings row, so a setting can be found by shape rather than by
+# reading every label. Colour is carried by the group, not the row: five
+# coloured headings divide the panel, and a row only lights up in its group's
+# colour when it is switched on.
+SETTINGS_GLYPHS = {
+    "work_seconds": "clock",
+    "break_seconds": "cup",
+    "counting": "chart",
+    "active_only": "cursor",
+    "idle_reset_enabled": "door",
+    "show_countdown": "topbar",
+    "eye_breaks": "eye",
+    "eye_breaks_enabled": "eye",
+    "prompt:far": "window",
+    "prompt:shut": "eyeshut",
+    "prompt:move": "arrows",
+    "sound": "speaker",
+    "sound_enabled": "speaker",
+    "which_sounds": "note",
+    "idle_credit_seconds": "hourglass",
+}
+SETTINGS_GROUP_COLORS = {
+    "work_seconds": PALETTE["amber"],
+    "break_seconds": PALETTE["mint"],
+    "counting": PALETTE["sky"],
+    "eye_breaks": PALETTE["plum"],
+    "sound": PALETTE["coral"],
+    "idle_credit_seconds": PALETTE["sky"],
+}
+
 
 def sound_dir() -> Path:
     """Where the shipped sound files live, installed or in the tree."""
@@ -2057,6 +2087,7 @@ class SettingsPanel(Gtk.Window, ui.PixelFrameWindow):
         self._segments: dict[str, list[tuple[Gtk.Button, int]]] = {}
         self._checks: dict[str, tuple[Gtk.Button, Gtk.DrawingArea]] = {}
         self._values: dict[str, bool] = {}
+        self._glyphs: dict[str, ui.GlyphMark] = {}
         self.set_default_size(self.WIDTH, -1)
         self.set_size_request(self.WIDTH, -1)
         self.set_position(Gtk.WindowPosition.CENTER)
@@ -2073,7 +2104,7 @@ class SettingsPanel(Gtk.Window, ui.PixelFrameWindow):
             ui.page_header(_("SETTINGS"), lambda *_args: self.hide()), False, False, 0
         )
 
-        card.pack_start(self._group(_("WORK INTERVAL")), False, False, 0)
+        card.pack_start(self._group(_("WORK INTERVAL"), "work_seconds"), False, False, 0)
         card.pack_start(
             self._segmented(
                 "work_seconds",
@@ -2085,7 +2116,7 @@ class SettingsPanel(Gtk.Window, ui.PixelFrameWindow):
             0,
         )
 
-        card.pack_start(self._group(_("BREAK LENGTH")), False, False, 0)
+        card.pack_start(self._group(_("BREAK LENGTH"), "break_seconds"), False, False, 0)
         card.pack_start(
             self._segmented(
                 "break_seconds",
@@ -2097,7 +2128,7 @@ class SettingsPanel(Gtk.Window, ui.PixelFrameWindow):
             0,
         )
 
-        card.pack_start(self._group(_("COUNTING")), False, False, 0)
+        card.pack_start(self._group(_("COUNTING"), "counting"), False, False, 0)
         for key, label, value in (
             (
                 "active_only",
@@ -2119,7 +2150,7 @@ class SettingsPanel(Gtk.Window, ui.PixelFrameWindow):
 
         # The eye break: its own switch, its own interval, and one row per
         # prompt, built from the prompt table so a prompt added later shows up.
-        card.pack_start(self._group(_("EYE BREAKS")), False, False, 0)
+        card.pack_start(self._group(_("EYE BREAKS"), "eye_breaks"), False, False, 0)
         card.pack_start(
             self._checkbox(
                 "eye_breaks_enabled",
@@ -2156,14 +2187,14 @@ class SettingsPanel(Gtk.Window, ui.PixelFrameWindow):
         # Sound is one master switch over a list built from the cue registry,
         # so a sound added in a later version arrives with its own row here.
         # The list itself folds away: it is set once and grows every release.
-        card.pack_start(self._group(_("SOUND")), False, False, 0)
+        card.pack_start(self._group(_("SOUND"), "sound"), False, False, 0)
         card.pack_start(
             self._checkbox("sound_enabled", _("Play sounds"), settings.sound_enabled),
             False,
             False,
             0,
         )
-        header, body = self._fold(_("WHICH SOUNDS"))
+        header, body = self._fold(_("WHICH SOUNDS"), key="which_sounds")
         header.set_margin_start(ap(6))
         card.pack_start(header, False, False, 0)
         self.sound_rows = [header]
@@ -2175,7 +2206,7 @@ class SettingsPanel(Gtk.Window, ui.PixelFrameWindow):
         card.pack_start(body, False, False, 0)
         self.apply_sound_master(settings.sound_enabled)
 
-        card.pack_start(self._group(_("AWAY COUNTS AFTER")), False, False, 0)
+        card.pack_start(self._group(_("AWAY COUNTS AFTER"), "idle_credit_seconds"), False, False, 0)
         card.pack_start(
             self._segmented(
                 "idle_credit_seconds",
@@ -2226,7 +2257,20 @@ class SettingsPanel(Gtk.Window, ui.PixelFrameWindow):
         for row in self.sound_rows:
             row.set_sensitive(bool(enabled))
 
-    def _fold(self, title: str, open_at_first: bool = False):
+    def _row_color(self, key: str, on: bool) -> str:
+        """A row's icon is grey until the row is on, then its group's colour."""
+        if not on:
+            return PALETTE["edge"]
+        for group, color in SETTINGS_GROUP_COLORS.items():
+            if key == group or key.startswith(group.split("_")[0]):
+                return color
+        if key.startswith("prompt:") or key.startswith("eye_"):
+            return SETTINGS_GROUP_COLORS["eye_breaks"]
+        if key.startswith("sound"):
+            return SETTINGS_GROUP_COLORS["sound"]
+        return SETTINGS_GROUP_COLORS["counting"]
+
+    def _fold(self, title: str, open_at_first: bool = False, key: str = ""):
         """A caption that opens and shuts the rows beneath it.
 
         The sound list is one row per declared cue, so it grows every time a
@@ -2242,6 +2286,14 @@ class SettingsPanel(Gtk.Window, ui.PixelFrameWindow):
         mark = ui.FoldMark(open_at_first)
         mark.set_valign(Gtk.Align.CENTER)
         row.pack_start(mark, False, False, 0)
+        glyph = SETTINGS_GLYPHS.get(key)
+        if glyph is not None:
+            row.pack_start(
+                ui.GlyphMark(glyph, SETTINGS_GROUP_COLORS["sound"], scale=3),
+                False,
+                False,
+                0,
+            )
         row.pack_start(ui.pixel_label(title, "pixel-caption", 0.0), False, False, 0)
         header.add(row)
 
@@ -2261,11 +2313,21 @@ class SettingsPanel(Gtk.Window, ui.PixelFrameWindow):
         return header, body
 
     @staticmethod
-    def _group(text: str) -> Gtk.Label:
+    def _group(text: str, key: str = "") -> Gtk.Widget:
+        """A heading: its icon in the group's colour, then the word."""
         label = ui.pixel_label(text, "pixel-caption", 0.0)
-        label.set_margin_top(ap(8))
-        label.set_margin_bottom(ap(2))
-        return label
+        glyph = SETTINGS_GLYPHS.get(key)
+        if glyph is None:
+            label.set_margin_top(ap(8))
+            label.set_margin_bottom(ap(2))
+            return label
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=ap(2))
+        row.set_margin_top(ap(8))
+        row.set_margin_bottom(ap(2))
+        mark = ui.GlyphMark(glyph, SETTINGS_GROUP_COLORS.get(key, PALETTE["mist"]))
+        row.pack_start(mark, False, False, 0)
+        row.pack_start(label, False, False, 0)
+        return row
 
     def _segmented(self, key: str, choices, active) -> Gtk.Box:
         row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=ap(2))
@@ -2312,6 +2374,11 @@ class SettingsPanel(Gtk.Window, ui.PixelFrameWindow):
                 PALETTE["amber"] if self._values[key] else PALETTE["edge"],
             ),
         )
+        glyph = SETTINGS_GLYPHS.get(key)
+        if glyph is not None:
+            mark = ui.GlyphMark(glyph, self._row_color(key, value), scale=3)
+            self._glyphs[key] = mark
+            row.pack_start(mark, False, False, 0)
         text = ui.pixel_label(label, "pixel-prompt", 0.0)
         text.set_line_wrap(True)
         # A wrapping label asks for the width of its longest word and no more,
@@ -2328,6 +2395,9 @@ class SettingsPanel(Gtk.Window, ui.PixelFrameWindow):
     def _check_clicked(self, _button, key: str) -> None:
         self._values[key] = not self._values[key]
         self._checks[key][1].queue_draw()
+        mark = self._glyphs.get(key)
+        if mark is not None:
+            mark.set_color(self._row_color(key, self._values[key]))
         self._on_change(key, self._values[key])
 
     def _on_delete(self, *_args) -> bool:
@@ -2661,6 +2731,17 @@ class ReminderApplication(Gtk.Application):
         # The one action that belongs in the menu rather than the control
         # window: it is reached while somebody is already looking at the
         # screen, so opening a window on the way would defeat it.
+        # The two things worth reaching without opening a window: saying you
+        # are back, and looking at the score.
+        self.return_item = Gtk.MenuItem(label=_("I'm back — restart the timer"))
+        self.return_item.connect("activate", self._reset_work_interval)
+        menu.append(self.return_item)
+
+        score_item = Gtk.MenuItem(label=_("Statistics"))
+        score_item.connect("activate", self._open_stats_window)
+        menu.append(score_item)
+        menu.append(Gtk.SeparatorMenuItem())
+
         self.discreet_item = Gtk.CheckMenuItem(label=_("Discreet mode"))
         self.discreet_item.set_active(False)
         self.discreet_item.connect("toggled", self._toggle_discreet)
@@ -3016,6 +3097,7 @@ class ReminderApplication(Gtk.Application):
         today = today_key()
         summary = self._stats_label(today)
         self.stats_item.set_label(summary)
+        self.return_item.set_sensitive(view.can_reset_work)
         if self.control_window is not None:
             self.control_window.update_state(
                 view, summary, self._standing_since is not None
@@ -3362,9 +3444,10 @@ class ReminderApplication(Gtk.Application):
         if self.scheduler.reset_work_interval():
             if was_awaiting:
                 self._record_outcome(BreakOutcome.TAKEN)
-                if self.window:
-                    self.window.hide()
-                    self._hide_dimmers()
+                self._play_sound(EYE_CUES["break_kept"])
+                # Whichever surface is carrying the break has to go, not just
+                # the centred one: in discreet mode that is the dock.
+                self._close_break_surfaces()
             self._update_interface()
 
     def _pause_reminders(self, _item, seconds: Optional[int]) -> None:

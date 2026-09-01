@@ -159,5 +159,37 @@ class WipeTests(unittest.TestCase):
         self.assertEqual(sorted(pixels.WIPE_ORDER), list(range(6)))
 
 
+class GlyphTests(unittest.TestCase):
+    def setUp(self):
+        from stand_up_reminder import pixelui
+
+        self.glyphs = pixelui.GLYPHS
+        self.size = pixelui.GLYPH_SIZE
+
+    def test_every_glyph_is_a_square_of_the_stated_size(self):
+        for name, rows in self.glyphs.items():
+            with self.subTest(name):
+                self.assertEqual(len(rows), self.size)
+                for row in rows:
+                    self.assertEqual(len(row), self.size)
+
+    def test_every_glyph_is_drawn_only_from_ink_and_gaps(self):
+        for name, rows in self.glyphs.items():
+            with self.subTest(name):
+                self.assertEqual(set("".join(rows)) - {"#", "."}, set())
+
+    def test_no_glyph_is_blank(self):
+        for name, rows in self.glyphs.items():
+            with self.subTest(name):
+                self.assertIn("#", "".join(rows))
+
+    def test_every_settings_row_names_a_glyph_that_exists(self):
+        from stand_up_reminder import application
+
+        for name in application.SETTINGS_GLYPHS.values():
+            with self.subTest(name):
+                self.assertIn(name, self.glyphs)
+
+
 if __name__ == "__main__":
     unittest.main()
