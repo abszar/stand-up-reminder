@@ -94,6 +94,18 @@ SETTINGS_GLYPHS = {
     "which_sounds": "note",
     "idle_credit_seconds": "hourglass",
 }
+# The control window's buttons, each with the icon and colour that says what
+# it does before the label is read.
+CONTROL_GLYPHS = {
+    "start": ("cup", PALETTE["mint"]),
+    "return": ("back", PALETTE["mint"]),
+    "standing": ("stand", PALETTE["sky"]),
+    "pause": ("pause", PALETTE["amber"]),
+    "resume": ("play", PALETTE["mint"]),
+    "score": ("chart", PALETTE["sky"]),
+    "settings": ("sliders", PALETTE["mist"]),
+    "quit": ("power", PALETTE["coral"]),
+}
 SETTINGS_GROUP_COLORS = {
     "work_seconds": PALETTE["amber"],
     "break_seconds": PALETTE["mint"],
@@ -1286,7 +1298,9 @@ class DockCard(Gtk.Window, ui.PixelFrameWindow):
         self.add(card)
 
     def set_snooze_seconds(self, seconds: int) -> None:
-        self.snooze_button.set_label(_("+%d MIN") % max(1, seconds // 60))
+        ui.set_button_label(
+            self.snooze_button, _("+%d MIN") % max(1, seconds // 60)
+        )
 
     def set_break_seconds(self, seconds: int) -> None:
         self.break_seconds = max(1, int(seconds))
@@ -1693,13 +1707,14 @@ class BreakWindow(Gtk.ApplicationWindow, ui.PixelFrameWindow):
         self.track.set_visible(bool(points))
 
     def set_snooze_seconds(self, snooze_seconds: int) -> None:
-        self.snooze_button.set_label(
-            _("%d more min") % short_minutes(snooze_seconds)
+        ui.set_button_label(
+            self.snooze_button, _("%d more min") % short_minutes(snooze_seconds)
         )
 
     def set_work_seconds(self, work_seconds: int) -> None:
-        self.return_button.set_label(
-            _("I'm back — start %d min") % short_minutes(work_seconds)
+        ui.set_button_label(
+            self.return_button,
+            _("I'm back — start %d min") % short_minutes(work_seconds),
         )
 
     @staticmethod
@@ -2458,26 +2473,36 @@ class ControlWindow(Gtk.Window, ui.PixelFrameWindow):
         self.summary.set_margin_top(ap(2))
         card.pack_start(self.summary, False, False, 0)
 
-        self.start_button = ui.pixel_button(_("Start a break now"))
+        self.start_button = ui.pixel_button(
+            _("Start a break now"), "default", *CONTROL_GLYPHS["start"]
+        )
         self.start_button.set_margin_top(ap(8))
         self.start_button.connect("clicked", on_start_break)
         card.pack_start(self.start_button, False, False, 0)
 
-        self.return_button = ui.pixel_button(_("I'm back — restart the timer"))
+        self.return_button = ui.pixel_button(
+            _("I'm back — restart the timer"), "default", *CONTROL_GLYPHS["return"]
+        )
         self.return_button.set_margin_top(ap(2))
         self.return_button.connect("clicked", on_return)
         card.pack_start(self.return_button, False, False, 0)
 
         self.standing_button = ui.pixel_button(
-            standing_action_label(False), "standing"
+            standing_action_label(False), "standing", *CONTROL_GLYPHS["standing"]
         )
         self.standing_button.set_margin_top(ap(2))
         self.standing_button.connect("clicked", on_standing)
         card.pack_start(self.standing_button, False, False, 0)
 
-        pause_caption = ui.pixel_label(_("PAUSE REMINDERS"), "pixel-caption", 0.0)
+        pause_caption = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=ap(2))
         pause_caption.set_margin_top(ap(8))
         pause_caption.set_margin_bottom(ap(2))
+        pause_caption.pack_start(
+            ui.GlyphMark(*CONTROL_GLYPHS["pause"]), False, False, 0
+        )
+        pause_caption.pack_start(
+            ui.pixel_label(_("PAUSE REMINDERS"), "pixel-caption", 0.0), False, False, 0
+        )
         card.pack_start(pause_caption, False, False, 0)
 
         self.pause_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=ap(2))
@@ -2495,7 +2520,9 @@ class ControlWindow(Gtk.Window, ui.PixelFrameWindow):
             self.pause_buttons.append(button)
         card.pack_start(self.pause_row, False, False, 0)
 
-        self.resume_button = ui.pixel_button(_("Resume reminders"), "primary")
+        self.resume_button = ui.pixel_button(
+            _("Resume reminders"), "primary", *CONTROL_GLYPHS["resume"]
+        )
         self.resume_button.set_no_show_all(True)
         self.resume_button.set_margin_top(ap(2))
         self.resume_button.connect("clicked", on_resume)
@@ -2504,15 +2531,17 @@ class ControlWindow(Gtk.Window, ui.PixelFrameWindow):
         pages = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=ap(2))
         pages.set_margin_top(ap(8))
         pages.set_homogeneous(True)
-        score_button = ui.pixel_button(_("Score"))
+        score_button = ui.pixel_button(_("Score"), "default", *CONTROL_GLYPHS["score"])
         score_button.connect("clicked", on_score)
-        settings_button = ui.pixel_button(_("Settings"))
+        settings_button = ui.pixel_button(
+            _("Settings"), "default", *CONTROL_GLYPHS["settings"]
+        )
         settings_button.connect("clicked", on_settings)
         pages.pack_start(score_button, True, True, 0)
         pages.pack_start(settings_button, True, True, 0)
         card.pack_start(pages, False, False, 0)
 
-        quit_button = ui.pixel_button(_("Quit"), "danger")
+        quit_button = ui.pixel_button(_("Quit"), "danger", *CONTROL_GLYPHS["quit"])
         quit_button.set_margin_top(ap(8))
         quit_button.connect("clicked", on_quit)
         card.pack_start(quit_button, False, False, 0)
@@ -2526,7 +2555,9 @@ class ControlWindow(Gtk.Window, ui.PixelFrameWindow):
         self.summary.set_text(summary)
         self.start_button.set_sensitive(view.can_start_break)
         self.return_button.set_sensitive(view.can_reset_work)
-        self.standing_button.set_label(standing_action_label(standing))
+        ui.set_button_label(
+            self.standing_button, standing_action_label(standing)
+        )
         for button in self.pause_buttons:
             button.set_sensitive(view.can_pause)
         self.pause_row.set_visible(not view.can_resume)

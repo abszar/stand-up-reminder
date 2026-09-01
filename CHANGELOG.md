@@ -81,6 +81,12 @@ All notable changes to Stand Up Reminder are documented in this file.
 
 ### Changed
 
+- **The control window's buttons carry icons too**, on the same seven-pixel
+  grid: a cup for starting a break, a return arrow for saying you are back, a
+  figure for standing, pause bars over the pause row, a chart for the score,
+  sliders for the settings and a power mark for quit. The glyph sits left of a
+  still-centred label, so a column of buttons keeps one line of icons down its
+  edge and reads as a list rather than as decorated prose.
 - **Every settings row now carries an icon**, drawn as pixels in code rather
   than shipped as art: a clock for the work interval, a cup for the break, a
   cursor for active-only counting, a door for leaving the desk, a window and

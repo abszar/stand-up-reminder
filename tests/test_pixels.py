@@ -1,6 +1,14 @@
 import unittest
 
+import gi
+
+# pixelui pins these; pinning here too keeps this file runnable on its own,
+# where nothing else has chosen a version yet.
+gi.require_version("Gtk", "3.0")
+gi.require_version("Gdk", "3.0")
+
 from stand_up_reminder import pixels
+from stand_up_reminder import pixelui
 
 
 class PaletteTests(unittest.TestCase):
@@ -161,8 +169,6 @@ class WipeTests(unittest.TestCase):
 
 class GlyphTests(unittest.TestCase):
     def setUp(self):
-        from stand_up_reminder import pixelui
-
         self.glyphs = pixelui.GLYPHS
         self.size = pixelui.GLYPH_SIZE
 

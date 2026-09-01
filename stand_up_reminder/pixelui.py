@@ -551,13 +551,47 @@ class WipeOverlay(Gtk.DrawingArea):
 
 
 
-def pixel_button(label: str, variant: str = "default") -> Gtk.Button:
-    """A flat pixel button; the variant carries its palette role."""
-    button = Gtk.Button(label=label)
+def pixel_button(
+    label: str,
+    variant: str = "default",
+    glyph: str = "",
+    glyph_color: str = "",
+) -> Gtk.Button:
+    """A flat pixel button; the variant carries its palette role.
+
+    A glyph sits to the left of the label with the text still centred in what
+    is left, so a column of buttons keeps one line of icons down its edge and
+    reads as a list rather than as decorated prose.
+    """
+    button = Gtk.Button()
     button.get_style_context().add_class("pixel-button")
     button.get_style_context().add_class(f"pixel-button-{variant}")
     button.set_can_focus(True)
+    if not glyph:
+        button.set_label(label)
+        return button
+    row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
+    mark = GlyphMark(glyph, glyph_color or PALETTE["mist"], scale=3)
+    mark.set_margin_end(ap(2))
+    row.pack_start(mark, False, False, 0)
+    text = Gtk.Label(label=label)
+    text.set_hexpand(True)
+    row.pack_start(text, True, True, 0)
+    button.add(row)
+    # Gtk.Button.set_label would throw this whole row away and put a bare
+    # label in its place, taking the glyph with it. Callers that relabel go
+    # through set_button_label instead, which finds this.
+    button.pixel_text = text
     return button
+
+
+def set_button_label(button: Gtk.Button, label: str) -> None:
+    """Relabel a pixel button without discarding the glyph beside its text."""
+    text = getattr(button, "pixel_text", None)
+    if text is None:
+        button.set_label(label)
+    else:
+        text.set_text(label)
 
 
 # Settings icons, authored as pixels rather than shipped as art. Each is seven
@@ -671,6 +705,60 @@ GLYPHS = {
         ".###.#.",
         ".###...",
         ".#.....",
+    ),
+    "back": (
+        "...#...",
+        "..##...",
+        ".###...",
+        "..##..#",
+        "...#..#",
+        "......#",
+        ".#####.",
+    ),
+    "stand": (
+        "..##...",
+        "..##...",
+        ".####..",
+        "#.##.#.",
+        "..##...",
+        ".#..#..",
+        ".#..#..",
+    ),
+    "pause": (
+        ".##.##.",
+        ".##.##.",
+        ".##.##.",
+        ".##.##.",
+        ".##.##.",
+        ".##.##.",
+        ".......",
+    ),
+    "play": (
+        ".#.....",
+        ".###...",
+        ".#####.",
+        ".######",
+        ".#####.",
+        ".###...",
+        ".#.....",
+    ),
+    "sliders": (
+        ".#...#.",
+        ".#...#.",
+        "###..#.",
+        ".#...#.",
+        ".#..###",
+        ".#...#.",
+        ".#...#.",
+    ),
+    "power": (
+        "...#...",
+        ".#.#.#.",
+        "#..#..#",
+        "#..#..#",
+        "#.....#",
+        ".#...#.",
+        "..###..",
     ),
     "hourglass": (
         "#######",
