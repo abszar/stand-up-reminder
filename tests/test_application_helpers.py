@@ -441,6 +441,7 @@ class EyeCardTests(unittest.TestCase):
             _eye_squeezed=Mock(),
             _eye_finished=Mock(),
             _save_settings=Mock(),
+            _pill_rect=Mock(return_value=None),
         )
         app.scheduler.snapshot.return_value = SimpleNamespace(locked=False, phase=phase)
         app.eye_card.get_visible.return_value = False
@@ -496,6 +497,37 @@ class EyeCardTests(unittest.TestCase):
         application.ReminderApplication._show_eye_card(app)
 
         self.assertEqual(app.eye_card.begin.call_args.args[0].key, eyes.ROTATION[2])
+
+    def test_a_card_is_told_which_rows_the_pill_holds(self):
+        app = self.make_app()
+        app._pill_rect = Mock(return_value=(900, 1056, 56))
+
+        application.ReminderApplication._show_eye_card(app)
+
+        self.assertEqual(app.eye_card.begin.call_args.args[1], (900, 1056, 56))
+
+
+class PillRectTests(unittest.TestCase):
+    def test_no_pill_on_screen_holds_nothing(self):
+        app = SimpleNamespace(pill=None)
+        self.assertIsNone(application.ReminderApplication._pill_rect(app))
+
+    def test_a_hidden_pill_holds_nothing(self):
+        pill = Mock()
+        pill.get_visible.return_value = False
+        self.assertIsNone(
+            application.ReminderApplication._pill_rect(SimpleNamespace(pill=pill))
+        )
+
+    def test_a_pill_on_screen_holds_its_rows_and_its_column(self):
+        pill = Mock()
+        pill.get_visible.return_value = True
+        pill.get_position.return_value = (1864, 900)
+        pill.get_size.return_value = (56, 156)
+        self.assertEqual(
+            application.ReminderApplication._pill_rect(SimpleNamespace(pill=pill)),
+            (900, 1056, 56),
+        )
 
 
 class EdgeGlowTests(unittest.TestCase):

@@ -205,6 +205,7 @@ class EyeWindow(Gtk.Window, ui.PixelFrameWindow):
     """The card itself: twenty seconds, then it closes on its own."""
 
     WIDTH = ap(72)
+    EDGE_GAP = ap(3)
 
     def __init__(self, on_squeeze, on_finished) -> None:
         super().__init__(type=Gtk.WindowType.TOPLEVEL, title=_("Eye break"))
@@ -215,6 +216,7 @@ class EyeWindow(Gtk.Window, ui.PixelFrameWindow):
         self._timer = 0
         self._squeezed = 0
         self._started = 0
+        self._pill = None
         self.set_default_size(self.WIDTH, -1)
         self.set_size_request(self.WIDTH, -1)
         self.set_resizable(False)
@@ -230,6 +232,11 @@ class EyeWindow(Gtk.Window, ui.PixelFrameWindow):
         self.get_style_context().add_class("pixel-window")
         self.setup_frame()
         self.connect("delete-event", lambda *_args: True)
+        # Each prompt writes its own title and subtitle, so the card is a
+        # different size on every showing and a different size again when a
+        # phase changes under it: it has to be put back in its corner each
+        # time rather than placed once from whatever size it had before.
+        ui.keep_in_corner(self, self._place)
         self.add_events(Gdk.EventMask.BUTTON_PRESS_MASK)
         self.connect("button-press-event", lambda *_args: (self.finish(), True)[1])
 
@@ -262,9 +269,14 @@ class EyeWindow(Gtk.Window, ui.PixelFrameWindow):
         self.add(card)
 
     # --- running -----------------------------------------------------------
-    def begin(self, prompt) -> None:
-        """Show the card and start its twenty seconds."""
+    def begin(self, prompt, pill=None) -> None:
+        """Show the card and start its twenty seconds.
+
+        `pill` is the standing pill's (top, bottom, width) when it is on
+        screen, so the card can step out of the column it holds.
+        """
         self._prompt = prompt
+        self._pill = pill
         self._ms = 0
         self._squeezed = 0
         # Timed against the clock rather than by counting frames: GLib
@@ -281,8 +293,15 @@ class EyeWindow(Gtk.Window, ui.PixelFrameWindow):
         self.bar.set_filled(pixels.PROGRESS_CELLS, animate=False)
         self.seconds.set_text("%02d" % eyes.CARD_SECONDS, PALETTE["bone"])
         self.set_frame_colors(PALETTE[prompt.accent], PALETTE[prompt.body])
-        self.show_all()
-        self._place()
+        # A window keeps the size it had until it is laid out again, and each
+        # prompt writes a title of its own width. Laying the card out while it
+        # is still hidden is what lets it be placed on the size it will have,
+        # instead of being mapped in the last prompt's corner and jumping.
+        self.get_child().show_all()
+        _minimum, natural = self.get_preferred_size()
+        self.resize(natural.width, natural.height)
+        self._place((natural.width, natural.height))
+        self.show()
         self._stop_timer()
         # Reduced motion still gets the card and its countdown, just without
         # the frames in between.
@@ -326,7 +345,7 @@ class EyeWindow(Gtk.Window, ui.PixelFrameWindow):
         )
         return GLib.SOURCE_CONTINUE
 
-    def _place(self) -> None:
+    def _place(self, size=None) -> None:
         """Bottom right, clear of the standing pill's edge."""
         display = Gdk.Display.get_default()
         if display is None:
@@ -334,9 +353,9 @@ class EyeWindow(Gtk.Window, ui.PixelFrameWindow):
         monitor = display.get_primary_monitor() or display.get_monitor(0)
         if monitor is None:
             return
-        area = monitor.get_workarea()
-        width, height = self.get_size()
+        width, height = size or self.get_size()
         self.move(
-            area.x + area.width - width - ap(16),
-            area.y + area.height - height - ap(6),
+            *ui.corner_place(
+                monitor.get_workarea(), width, height, self.EDGE_GAP, self._pill
+            )
         )

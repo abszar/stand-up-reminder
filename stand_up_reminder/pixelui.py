@@ -12,6 +12,7 @@ from typing import Optional, Sequence
 import gi
 
 gi.require_version("Gtk", "3.0")
+gi.require_version("Gdk", "3.0")
 
 gi.require_version("Pango", "1.0")
 gi.require_version("PangoCairo", "1.0")
@@ -77,6 +78,39 @@ def use_rgba_visual(window: Gtk.Window) -> None:
     if visual is not None:
         window.set_visual(visual)
     window.set_app_paintable(True)
+
+
+def corner_place(area, width, height, gap, pill=None, drop: int = 0):
+    """Top left of a card parked in the bottom right corner of `area`.
+
+    Windows are anchored by their top left corner, so a card whose size
+    follows its content has to be placed from the size it actually has: a
+    card placed from a wider size drifts in from the corner, and one placed
+    from a narrower size grows off the screen edge. `pill` is the standing
+    pill as (top, bottom, width); it only pushes the card out of its column
+    when the two share rows, because a pill parked elsewhere is not in the
+    way and a card that steps around it anyway reads as badly aligned.
+    """
+    left = area.x + area.width - width - gap
+    top = area.y + area.height - height - gap
+    if pill is not None:
+        pill_top, pill_bottom, pill_width = pill
+        if pill_top < top + height and pill_bottom > top:
+            left -= pill_width + gap
+    return left, top + drop
+
+
+def keep_in_corner(window: Gtk.Window, place) -> None:
+    """Place the window again whenever its own size changes under it."""
+    placed = [None]
+
+    def on_allocate(_widget, _allocation) -> None:
+        size = tuple(window.get_size())
+        if window.get_visible() and size != placed[0]:
+            placed[0] = size
+            place()
+
+    window.connect("size-allocate", on_allocate)
 
 
 class PixelFrameWindow:

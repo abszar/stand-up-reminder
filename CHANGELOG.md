@@ -54,6 +54,18 @@ All notable changes to Stand Up Reminder are documented in this file.
 
 ### Fixed
 
+- **The corner cards were placed on the size they used to be.** An eye card
+  is as wide as the prompt written on it and as tall as the picture it draws,
+  and a docked break card grows and shrinks with the buttons its phase needs
+  — but both were pinned by their top left corner from whatever size they
+  happened to have a moment earlier. A card that then grew ran off the edge
+  of the screen and onto the next monitor; one that shrank drifted a hundred
+  pixels in from the corner. Both are now laid out before they are shown and
+  put back in the corner whenever their size changes under them, so every
+  card sits the same twelve pixels off the corner the standing pill holds.
+  The eye card also no longer leaves a pill-wide gap at the edge when the
+  pill is nowhere near that corner: it steps aside only for a pill parked on
+  its own rows.
 - Saying *I'm back* from the menu now closes whichever surface is carrying the
   break rather than only the centred card, so it works in Discreet mode too,
   and sounds the same fanfare the break card's own button does.

@@ -1241,6 +1241,8 @@ class DockCard(Gtk.Window, ui.PixelFrameWindow):
         self._phase = Phase.BREAK
         self.break_seconds = 2 * 60
         self.warning_seconds = 0
+        self._pill = None
+        self._drop = 0
         self.set_default_size(self.WIDTH, -1)
         self.set_size_request(self.WIDTH, -1)
         self.set_resizable(False)
@@ -1253,6 +1255,10 @@ class DockCard(Gtk.Window, ui.PixelFrameWindow):
         self.setup_frame()
         self.set_frame_colors(PALETTE["amber"], PALETTE["ink"])
         self.connect("delete-event", lambda *_args: True)
+        # Its buttons come and go with the phase, so the card is a different
+        # height at different moments of the same break and has to be put
+        # back in the corner each time rather than grow past the screen edge.
+        ui.keep_in_corner(self, self._place)
 
         card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         card.set_border_width(ap(2) + ap(2))
@@ -1328,38 +1334,49 @@ class DockCard(Gtk.Window, ui.PixelFrameWindow):
         self.skip_button.set_visible(view.can_skip)
         self.miss_button.set_visible(view.can_miss)
 
-    def reveal(self, pill_height: int = 0) -> None:
+    def reveal(self, pill=None) -> None:
+        """Show the card, stepping left of a pill parked in its corner."""
         if self.get_visible():
             return
-        self.show_all()
-        self._place(pill_height, self.SLIDE[0] if ui.animations_enabled() else 0)
+        self._pill = pill
+        self._drop = self.SLIDE[0] if ui.animations_enabled() else 0
+        # Laid out while it is still hidden, so the card is mapped at the size
+        # this phase asks for rather than at the size the last one left it.
+        self.get_child().show_all()
+        _minimum, natural = self.get_preferred_size()
+        self.resize(natural.width, natural.height)
+        self._place((natural.width, natural.height))
+        self.show()
         self.present()
         if ui.animations_enabled():
-            self._slide_up(pill_height)
+            self._slide_up()
 
-    def _slide_up(self, pill_height: int) -> None:
+    def _slide_up(self) -> None:
         steps = list(self.SLIDE[1:])
 
         def step() -> bool:
-            self._place(pill_height, steps.pop(0))
+            self._drop = steps.pop(0)
+            self._place()
             return GLib.SOURCE_CONTINUE if steps else GLib.SOURCE_REMOVE
 
         GLib.timeout_add(40, step)
 
-    def _place(self, pill_height: int = 0, drop: int = 0) -> None:
+    def _place(self, size=None) -> None:
         """The bottom right corner, stepping left of a pill parked in it."""
         display = Gdk.Display.get_default()
         monitor = display.get_primary_monitor() if display else None
         if monitor is None:
             return
-        area = monitor.get_workarea()
-        width, height = self.get_size()
-        # The pill is pinned to the right edge and can be dragged low enough
-        # to sit in this corner; where it would, the card steps left of it.
-        clearance = StandingPill.WIDTH + PILL_EDGE_GAP + ap(2) if pill_height else 0
+        width, height = size or self.get_size()
         self.move(
-            area.x + area.width - width - self.EDGE_GAP - clearance,
-            area.y + area.height - height - self.EDGE_GAP + drop,
+            *ui.corner_place(
+                monitor.get_workarea(),
+                width,
+                height,
+                self.EDGE_GAP,
+                self._pill,
+                self._drop,
+            )
         )
 
 
@@ -3066,13 +3083,15 @@ class ReminderApplication(Gtk.Application):
         self.dock.update_state(
             snapshot.phase, snapshot.seconds_remaining, snapshot.away_seconds
         )
-        self.dock.reveal(self._pill_bottom())
+        self.dock.reveal(self._pill_rect())
 
-    def _pill_bottom(self) -> int:
-        """How far up the corner is already taken by the standing pill."""
+    def _pill_rect(self):
+        """The rows and the column the standing pill holds, if it is up."""
         if self.pill is None or not self.pill.get_visible():
-            return 0
-        return self.pill.get_size()[0]
+            return None
+        _x, top = self.pill.get_position()
+        width, height = self.pill.get_size()
+        return top, top + height, width
 
     def _show_dimmers(self) -> None:
         """Cover the monitors that do not hold the break card."""
@@ -3419,7 +3438,7 @@ class ReminderApplication(Gtk.Application):
         self._save_settings(eye_rotation_index=position)
         if self.eye_card is None:
             self.eye_card = EyeWindow(self._eye_squeezed, self._eye_finished)
-        self.eye_card.begin(prompt)
+        self.eye_card.begin(prompt, self._pill_rect())
         self._play_sound(EYE_CUES["eye_" + prompt.key])
 
     def _eye_squeezed(self) -> None:
