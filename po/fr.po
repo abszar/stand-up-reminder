@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Stand Up Reminder 1.2.0\n"
 "Report-Msgid-Bugs-To: https://github.com/abszar/stand-up-reminder/issues\n"
-"POT-Creation-Date: 2026-09-01 14:28+0200\n"
+"POT-Creation-Date: 2026-09-04 15:50+0200\n"
 "PO-Revision-Date: 2026-07-20 23:40+0200\n"
 "Last-Translator: Automatically generated\n"
 "Language-Team: none\n"
@@ -86,6 +86,10 @@ msgid ""
 msgstr "Tenez-vous droit. Relâchez les épaules. Faites quelques pas."
 
 #: stand_up_reminder/application.py
+msgid "I'm already standing"
+msgstr "Je suis déjà debout"
+
+#: stand_up_reminder/application.py
 msgid "Nice one"
 msgstr "Bien joué"
 
@@ -105,6 +109,10 @@ msgid ""
 msgstr ""
 "Reprenez quand\n"
 "vous voulez."
+
+#: stand_up_reminder/application.py
+msgid "I'm standing — keep count"
+msgstr "Je reste debout — continuer"
 
 #: stand_up_reminder/application.py
 msgid "ENTER"
@@ -205,10 +213,6 @@ msgstr "Il est temps de se lever"
 #: stand_up_reminder/application.py
 msgid "I'm back"
 msgstr "Je suis de retour"
-
-#: stand_up_reminder/application.py
-msgid "I'm standing — keep count"
-msgstr "Je reste debout — continuer"
 
 #: stand_up_reminder/application.py
 msgid "5 more min"

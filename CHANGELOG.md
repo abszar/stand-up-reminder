@@ -6,6 +6,15 @@ All notable changes to Stand Up Reminder are documented in this file.
 
 ### Added
 
+- **The break can be answered before it starts.** The card that counts down
+  to a break now offers *I'm already standing* alongside *5 more min* and
+  *Skip it*, with the same `T` key the break itself uses. Somebody who is
+  already on their feet had to sit through the countdown and then wait for
+  the break card to arrive before they could say so; now one press closes the
+  card, opens the standing pill and starts the count. The break is recorded
+  as taken, the work interval is held for as long as you stay up, and a fresh
+  one begins when you sit back down — exactly as it does when the break card
+  itself is answered by standing.
 - **An edge glow for the standing check.** When the pill asks whether you are
   still up, coral now bleeds in from all four edges of every monitor and
   fades away again over three seconds — most of that at full strength, since

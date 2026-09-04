@@ -506,6 +506,17 @@ class StandUpTests(SchedulerFixture):
         self.assertEqual(self.scheduler.stand_up(), Transition.END_BREAK)
         self.assertEqual(self.scheduler.snapshot().phase, Phase.WORK)
 
+    def test_standing_at_the_warning_starts_a_fresh_work_interval(self):
+        self.scheduler.set_durations(warning_seconds=10)
+        self.clocks.advance(20)
+        self.assertEqual(self.scheduler.advance(), Transition.WARN_BREAK)
+
+        self.assertEqual(self.scheduler.stand_up(), Transition.END_BREAK)
+
+        snapshot = self.scheduler.snapshot()
+        self.assertEqual(snapshot.phase, Phase.WORK)
+        self.assertEqual(snapshot.seconds_remaining, 30)
+
     def test_standing_outside_a_break_changes_nothing(self):
         self.clocks.advance(20)
 

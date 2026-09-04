@@ -188,10 +188,15 @@ class Scheduler:
 
         A standing desk turns the break into a change of posture rather than
         a pause, so the break ends the moment the user stands and a fresh
-        work interval begins under them.
+        work interval begins under them. A break that is only coming up is
+        answered the same way, as snoozing and skipping are: somebody who is
+        already on their feet has nothing to wait for.
         """
         self.advance()
-        if self.phase not in (Phase.BREAK, Phase.AWAITING_RETURN):
+        if (
+            self.phase not in (Phase.BREAK, Phase.AWAITING_RETURN)
+            and not self._is_warning()
+        ):
             return None
         self._begin_work()
         return Transition.END_BREAK

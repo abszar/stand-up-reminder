@@ -363,6 +363,7 @@ class BreakView:
     can_return: bool
     can_miss: bool = False
     can_stand: bool = False
+    stand_label: str = ""
     title_color: str = PALETTE["bone"]
 
 
@@ -379,6 +380,11 @@ def break_view(phase: Phase, seconds_remaining: int, away_seconds: int) -> Break
             can_snooze=True,
             can_skip=True,
             can_return=False,
+            # Somebody already on their feet answers the break here rather
+            # than sitting through the countdown to press the same button.
+            # There is no count to keep yet, so the action says what it is.
+            can_stand=True,
+            stand_label=_("I'm already standing"),
         )
     active = phase is Phase.BREAK
     awaiting = phase is Phase.AWAITING_RETURN
@@ -398,6 +404,7 @@ def break_view(phase: Phase, seconds_remaining: int, away_seconds: int) -> Break
         # A standing desk answers the break in either state: while it runs
         # and once it is over and waiting to be confirmed.
         can_stand=active or awaiting,
+        stand_label=_("I'm standing — keep count"),
         title_color=PALETTE["mint"] if awaiting else PALETTE["bone"],
     )
 
@@ -1811,6 +1818,8 @@ class BreakWindow(Gtk.ApplicationWindow, ui.PixelFrameWindow):
         self.skip_button.set_visible(view.can_skip)
         self.return_button.set_visible(view.can_return)
         self.miss_button.set_visible(view.can_miss)
+        if view.stand_label:
+            ui.set_button_label(self.stand_button, view.stand_label)
         self.stand_button.set_visible(view.can_stand and not view.can_return)
         self.stand_small.set_visible(view.can_stand and view.can_return)
         self.hint.set_text(break_hint(view))

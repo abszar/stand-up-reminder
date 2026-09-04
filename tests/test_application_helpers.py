@@ -676,13 +676,24 @@ class BreakViewTests(unittest.TestCase):
         self.assertEqual(view.countdown, "00:15")
         self.assertEqual(view.secondary, "Standing up in 00:15")
         self.assertFalse(view.can_return)
-        self.assertFalse(view.can_stand)
         self.assertFalse(view.can_miss)
 
     def test_the_warning_offers_the_same_break_actions(self):
         view = application.break_view(Phase.WORK, 15, 0)
         self.assertTrue(view.can_snooze)
         self.assertTrue(view.can_skip)
+
+    def test_the_warning_can_be_answered_by_standing(self):
+        view = application.break_view(Phase.WORK, 15, 0)
+        self.assertTrue(view.can_stand)
+
+    def test_the_warning_names_the_action_for_somebody_already_up(self):
+        view = application.break_view(Phase.WORK, 15, 0)
+        self.assertEqual(view.stand_label, "I'm already standing")
+
+    def test_a_running_break_keeps_the_count_it_has_already_made(self):
+        view = application.break_view(Phase.BREAK, 75, 45)
+        self.assertEqual(view.stand_label, "I'm standing — keep count")
 
     def test_snoozed_view_has_no_popup_actions(self):
         view = application.break_view(Phase.SNOOZED, 5 * 60, 0)
@@ -706,9 +717,11 @@ class BreakHintTests(unittest.TestCase):
         view = application.break_view(Phase.BREAK, 75, 45)
         self.assertEqual(application.break_hint(view), "S SNOOZE · K SKIP · T STANDING")
 
-    def test_the_warning_has_no_standing_key(self):
+    def test_the_warning_names_the_standing_key(self):
         view = application.break_view(Phase.WORK, 15, 0)
-        self.assertEqual(application.break_hint(view), "S SNOOZE · K SKIP")
+        self.assertEqual(
+            application.break_hint(view), "S SNOOZE · K SKIP · T STANDING"
+        )
 
     def test_a_finished_break_confirms_or_stands(self):
         view = application.break_view(Phase.AWAITING_RETURN, 0, 90)
