@@ -1527,6 +1527,12 @@ class DimmerWindow(Gtk.Window):
     def __init__(self) -> None:
         super().__init__(type=Gtk.WindowType.TOPLEVEL)
         ui.keep_above(self)
+        # Every other window that helper dresses is the size of its own
+        # content; this one is the size of a monitor, so it takes its
+        # resizing back, and paints every pixel it covers itself rather than
+        # letting the desktop theme paint a grey rectangle underneath.
+        self.set_resizable(True)
+        self.set_app_paintable(True)
         self.set_accept_focus(False)
         self.set_type_hint(Gdk.WindowTypeHint.SPLASHSCREEN)
         self._bands = self.BANDS
@@ -1534,10 +1540,26 @@ class DimmerWindow(Gtk.Window):
         self.connect("delete-event", lambda *_args: True)
 
     def cover_monitor(self, monitor_index: int) -> None:
-        screen = self.get_screen()
-        if screen is None:
+        """Take the whole of a monitor, then wipe down it.
+
+        The window is given the monitor's work area the way the glow strips
+        are given theirs, and only shown once it has it. Asking to be
+        fullscreened instead left it at its default size in the top left
+        corner of the monitor it was meant to cover: a window this shape is
+        a splash, so that it never lands in the switcher, and a splash is
+        not a window the desktop will fullscreen. The work area rather than
+        the whole monitor because a cover taller than that is shoved up the
+        screen until it fits, and the panels it would have covered are drawn
+        over it in any case.
+        """
+        display = Gdk.Display.get_default()
+        monitor = display.get_monitor(monitor_index) if display else None
+        if monitor is None:
             return
-        self.fullscreen_on_monitor(screen, monitor_index)
+        area = monitor.get_workarea()
+        self.resize(area.width, area.height)
+        self.move(area.x, area.y)
+        self.show_all()
         self._wipe_down()
 
     def _wipe_down(self) -> None:
@@ -3110,7 +3132,6 @@ class ReminderApplication(Gtk.Application):
                 if index >= monitor_count or index == active_index:
                     dimmer.hide()
                     continue
-                dimmer.show_all()
                 dimmer.cover_monitor(index)
         except Exception as error:  # pragma: no cover - display layouts vary
             print(

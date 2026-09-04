@@ -54,6 +54,16 @@ All notable changes to Stand Up Reminder are documented in this file.
 
 ### Fixed
 
+- **The dimmer never covered anything.** During a break the other monitors
+  were meant to go dark under a scanlined cover; what actually appeared was a
+  small grey square in the top left corner of the second screen. The window
+  asked the desktop to fullscreen it on that monitor, which is refused for a
+  window of its type, and it had been made unresizable along with every other
+  window that is the size of its own content, so it stayed at the default two
+  hundred pixels square and painted the desktop theme's grey rather than its
+  own ink. It now takes the monitor's work area the way the edge glow takes
+  it, is shown only once it has it, and paints every pixel it covers.
+
 - **The corner cards were placed on the size they used to be.** An eye card
   is as wide as the prompt written on it and as tall as the picture it draws,
   and a docked break card grows and shrinks with the buttons its phase needs
