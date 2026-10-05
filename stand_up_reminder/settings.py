@@ -33,6 +33,12 @@ IDLE_CREDIT_SECONDS_RANGE = (2 * 60, 4 * 60 * 60)
 WORK_PRESETS = (20 * 60, 30 * 60, 45 * 60, 60 * 60, 90 * 60)
 BREAK_PRESETS = (60, 2 * 60, 3 * 60, 5 * 60, 10 * 60)
 IDLE_CREDIT_PRESETS = (5 * 60, 10 * 60, 15 * 60, 30 * 60)
+# Cue volume as a percentage of the sound server's own scale, the one the
+# desktop's volume slider shows. The cues are square waves and carry further
+# than their level suggests, so they start well below full.
+VOLUME_PRESETS = (20, 40, 60, 80, 100)
+DEFAULT_SOUND_VOLUME = 40
+SOUND_VOLUME_RANGE = (5, 100)
 
 
 @dataclass(frozen=True)
@@ -50,6 +56,7 @@ class Settings:
     # not the audible one: a cue added in a later version is then audible by
     # default, and no settings file written before it existed needs touching.
     muted_sounds: frozenset = frozenset()
+    sound_volume: int = DEFAULT_SOUND_VOLUME
     eye_breaks_enabled: bool = True
     eye_interval_seconds: int = DEFAULT_EYE_INTERVAL_SECONDS
     # Which of the three eye prompts are switched off, held as the muted set
@@ -146,6 +153,9 @@ def settings_from_payload(payload: dict) -> Settings:
         show_countdown=_read_flag(payload, "show_countdown", True),
         sound_enabled=_read_flag(payload, "sound_enabled", False),
         muted_sounds=_read_names(payload, "muted_sounds"),
+        sound_volume=_read_duration(
+            payload, "sound_volume", SOUND_VOLUME_RANGE, DEFAULT_SOUND_VOLUME
+        ),
         eye_breaks_enabled=_read_flag(payload, "eye_breaks_enabled", True),
         eye_interval_seconds=_read_duration(
             payload,

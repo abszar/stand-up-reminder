@@ -231,6 +231,64 @@ class SoundPlayerTests(unittest.TestCase):
         self.assertEqual(application.sound_player(lambda _name: None), "")
 
 
+class SoundVolumeTests(unittest.TestCase):
+    def test_pulseaudio_is_told_the_volume_on_its_own_scale(self):
+        self.assertEqual(
+            application.player_command("/usr/bin/paplay", "/s/cue.wav", 50),
+            ["/usr/bin/paplay", "--volume=32768", "/s/cue.wav"],
+        )
+
+    def test_full_volume_is_pulseaudio_full_scale(self):
+        self.assertIn(
+            "--volume=65536",
+            application.player_command("/usr/bin/paplay", "/s/cue.wav", 100),
+        )
+
+    def test_alsa_has_no_volume_to_be_told(self):
+        self.assertEqual(
+            application.player_command("/usr/bin/aplay", "/s/cue.wav", 40),
+            ["/usr/bin/aplay", "/s/cue.wav"],
+        )
+
+    def test_canberra_volume_matches_pulseaudio_at_the_same_setting(self):
+        # PulseAudio's scale is cubic: half of it is about eighteen decibels down.
+        self.assertEqual(application.canberra_volume(100), "0.0")
+        self.assertAlmostEqual(float(application.canberra_volume(50)), -18.06, 1)
+
+    def make_app(self, **settings):
+        return SimpleNamespace(
+            settings=Settings(**settings),
+            discreet=False,
+            _save_settings=Mock(),
+            _update_interface=Mock(),
+            _emit_sound=Mock(),
+            settings_panel=None,
+        )
+
+    def test_choosing_a_volume_saves_it(self):
+        app = self.make_app()
+        application.ReminderApplication._panel_changed(app, "sound_volume", 80)
+        app._save_settings.assert_called_once_with(sound_volume=80)
+
+    def test_the_test_button_plays_even_a_muted_cue(self):
+        cue = application.VOLUME_TEST_CUE
+        app = self.make_app(sound_enabled=True, muted_sounds=frozenset({cue.key}))
+        application.ReminderApplication._panel_changed(app, "sound_test", None)
+        app._emit_sound.assert_called_once_with(cue)
+
+    def test_a_muted_cue_still_stays_silent_on_its_own(self):
+        cue = application.SOUND_CUES[0]
+        app = self.make_app(sound_enabled=True, muted_sounds=frozenset({cue.key}))
+        application.ReminderApplication._play_sound(app, cue)
+        app._emit_sound.assert_not_called()
+
+    def test_an_allowed_cue_reaches_the_speaker(self):
+        cue = application.SOUND_CUES[0]
+        app = self.make_app(sound_enabled=True)
+        application.ReminderApplication._play_sound(app, cue)
+        app._emit_sound.assert_called_once_with(cue)
+
+
 class ResetFromMenuTests(unittest.TestCase):
     def make_app(self, phase):
         app = SimpleNamespace(

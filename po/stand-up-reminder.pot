@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Stand Up Reminder 1.2.0\n"
 "Report-Msgid-Bugs-To: https://github.com/abszar/stand-up-reminder/issues\n"
-"POT-Creation-Date: 2026-09-04 15:50+0200\n"
+"POT-Creation-Date: 2026-10-05 08:57+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE\n"
@@ -343,6 +343,10 @@ msgstr ""
 
 #: stand_up_reminder/application.py
 msgid "Play sounds"
+msgstr ""
+
+#: stand_up_reminder/application.py
+msgid "Test the volume"
 msgstr ""
 
 #: stand_up_reminder/application.py

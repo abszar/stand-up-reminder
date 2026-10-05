@@ -6,6 +6,13 @@ All notable changes to Stand Up Reminder are documented in this file.
 
 ### Added
 
+- **A volume for the sound cues, and a button to try it.** The cues played at
+  full level, and square waves carry further than their level suggests, so
+  they were too loud. The settings now offer 20 to 100 percent under *Play
+  sounds*, starting at 40, with *Test the volume* playing the break's knock at
+  the chosen level — even when that cue is muted on its own. The percentage is
+  on the desktop's own volume scale, so 40 here means what 40 means on the
+  volume slider.
 - **The break can be answered before it starts.** The card that counts down
   to a break now offers *I'm already standing* alongside *5 more min* and
   *Skip it*, with the same `T` key the break itself uses. Somebody who is

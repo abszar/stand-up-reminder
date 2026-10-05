@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import os
 import shutil
 import sys
@@ -34,6 +35,7 @@ from .scheduler import Phase, Scheduler, TimingMode, Transition
 from .settings import (
     BREAK_PRESETS,
     IDLE_CREDIT_PRESETS,
+    VOLUME_PRESETS,
     WORK_PRESETS,
     Settings,
     SettingsStore,
@@ -92,6 +94,7 @@ SETTINGS_GLYPHS = {
     "sound": "speaker",
     "sound_enabled": "speaker",
     "which_sounds": "note",
+    "sound_test": "play",
     "idle_credit_seconds": "hourglass",
 }
 # The control window's buttons, each with the icon and colour that says what
@@ -144,6 +147,26 @@ def sound_player(which=shutil.which) -> str:
     return ""
 
 
+def player_command(player: str, path: str, volume: int) -> list:
+    """The command line that plays one file at the chosen volume.
+
+    paplay takes the volume on PulseAudio's own scale, where 65536 is full.
+    aplay has no volume of its own and plays the file as it is.
+    """
+    if Path(player).name == "paplay":
+        return [player, f"--volume={round(65536 * volume / 100)}", path]
+    return [player, path]
+
+
+def canberra_volume(volume: int) -> str:
+    """The same volume as libcanberra wants it: decibels, as a string.
+
+    The percentage is on PulseAudio's cubic scale, so GSound and paplay agree
+    on how loud a given setting is.
+    """
+    return str(round(60 * math.log10(max(volume, 1) / 100), 2))
+
+
 @dataclass(frozen=True)
 class SoundCue:
     """One sound the application can make, and the name it answers to.
@@ -174,6 +197,9 @@ SOUND_CUES = (
     SoundCue("eye_done", _("An eye break ending"), filename="eye-done.wav"),
 )
 EYE_CUES = {cue.key: cue for cue in SOUND_CUES}
+# What the settings' test button plays: the break's knock, the cue heard most
+# and the one the volume is really being set for.
+VOLUME_TEST_CUE = SOUND_CUES[0]
 
 
 def sound_allowed(settings, cue: SoundCue, discreet: bool = False) -> bool:
@@ -2257,10 +2283,27 @@ class SettingsPanel(Gtk.Window, ui.PixelFrameWindow):
             False,
             0,
         )
+        volume = self._segmented(
+            "sound_volume",
+            [("%d%%" % percent, percent) for percent in VOLUME_PRESETS],
+            settings.sound_volume,
+        )
+        volume.set_margin_start(ap(6))
+        volume.set_margin_top(ap(2))
+        card.pack_start(volume, False, False, 0)
+        test = ui.pixel_button(
+            _("Test the volume"),
+            glyph=SETTINGS_GLYPHS["sound_test"],
+            glyph_color=SETTINGS_GROUP_COLORS["sound"],
+        )
+        test.set_margin_start(ap(6))
+        test.set_margin_top(ap(2))
+        test.connect("clicked", lambda *_args: self._on_change("sound_test", None))
+        card.pack_start(test, False, False, 0)
         header, body = self._fold(_("WHICH SOUNDS"), key="which_sounds")
         header.set_margin_start(ap(6))
         card.pack_start(header, False, False, 0)
-        self.sound_rows = [header]
+        self.sound_rows = [volume, test, header]
         for key, label, audible in sound_rows(settings):
             row = self._checkbox("sound:" + key, label, audible)
             row.set_margin_start(ap(12))
@@ -2897,6 +2940,11 @@ class ReminderApplication(Gtk.Application):
             self._save_settings(mode=mode)
         elif key == "idle_reset_enabled":
             self._save_settings(idle_reset_enabled=value)
+        elif key == "sound_volume":
+            self._save_settings(sound_volume=value)
+        elif key == "sound_test":
+            # Asked for by hand, so it plays whichever cues are muted.
+            self._emit_sound(VOLUME_TEST_CUE)
         elif key == "sound_enabled":
             self._save_settings(sound_enabled=value)
             if self.settings_panel is not None:
@@ -3058,12 +3106,19 @@ class ReminderApplication(Gtk.Application):
         """
         if not sound_allowed(self.settings, cue, self.discreet):
             return
+        self._emit_sound(cue)
+
+    def _emit_sound(self, cue: SoundCue) -> None:
+        """Play a cue at the chosen volume, with no switch consulted."""
+        volume = self.settings.sound_volume
         if self._sound is None:
             # No GSound: our own files still play through whatever the system
             # has. GLib reaps the child, so nothing is left behind.
             if cue.filename and self._player:
                 GLib.spawn_async(
-                    [self._player, str(sound_dir() / cue.filename)],
+                    player_command(
+                        self._player, str(sound_dir() / cue.filename), volume
+                    ),
                     flags=GLib.SpawnFlags.SEARCH_PATH,
                 )
             return
@@ -3073,6 +3128,7 @@ class ReminderApplication(Gtk.Application):
             }
         else:
             attributes = {GSound.ATTR_EVENT_ID: cue.event_id}
+        attributes[GSound.ATTR_CANBERRA_VOLUME] = canberra_volume(volume)
         try:
             self._sound.play_simple(attributes, None)
         except GLib.Error:  # pragma: no cover - depends on host audio

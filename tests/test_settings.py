@@ -8,6 +8,8 @@ from stand_up_reminder.settings import (
     BREAK_SECONDS_RANGE,
     IDLE_CREDIT_SECONDS_RANGE,
     SNOOZE_SECONDS_RANGE,
+    SOUND_VOLUME_RANGE,
+    VOLUME_PRESETS,
     WORK_SECONDS_RANGE,
     Settings,
     SettingsStore,
@@ -73,6 +75,7 @@ class SettingsStoreTests(unittest.TestCase):
             show_countdown=False,
             sound_enabled=True,
             muted_sounds=frozenset({"break_done"}),
+            sound_volume=80,
             eye_breaks_enabled=False,
             eye_interval_seconds=30 * 60,
             muted_prompts=frozenset({"move"}),
@@ -216,6 +219,34 @@ class EyeRotationTests(unittest.TestCase):
     def test_a_value_that_is_not_a_position_is_ignored(self):
         self.assertEqual(
             settings_from_payload({"eye_rotation_index": "two"}).eye_rotation_index, 0
+        )
+
+
+class SoundVolumeTests(unittest.TestCase):
+    def test_sounds_start_well_below_full_volume(self):
+        self.assertLess(Settings().sound_volume, 100)
+        self.assertIn(Settings().sound_volume, VOLUME_PRESETS)
+
+    def test_a_file_written_before_the_volume_existed_gets_the_default(self):
+        self.assertEqual(
+            settings_from_payload({"sound_enabled": True}).sound_volume,
+            Settings().sound_volume,
+        )
+
+    def test_volume_is_kept_inside_its_range(self):
+        self.assertEqual(
+            settings_from_payload({"sound_volume": 400}).sound_volume,
+            SOUND_VOLUME_RANGE[1],
+        )
+        self.assertEqual(
+            settings_from_payload({"sound_volume": 0}).sound_volume,
+            SOUND_VOLUME_RANGE[0],
+        )
+
+    def test_an_unusable_volume_falls_back_to_the_default(self):
+        self.assertEqual(
+            settings_from_payload({"sound_volume": "loud"}).sound_volume,
+            Settings().sound_volume,
         )
 
 

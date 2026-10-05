@@ -116,6 +116,8 @@ The sounds shipped with the application play through `paplay` or `aplay`,
 which Ubuntu already has. Installing `gir1.2-gsound-1.0` routes them through
 GSound instead, which is only needed for cues drawn from the desktop's own
 sound theme.
+The volume setting applies through `paplay` and GSound; `aplay` has no
+volume of its own and plays the cues at full level.
 
 #### 2. Clone and install
 
@@ -183,6 +185,7 @@ when it is read.
 | `show_countdown` | Show the countdown next to the top-bar icon |
 | `sound_enabled` | Master switch for every sound the application makes |
 | `muted_sounds` | Names of individual cues to silence, e.g. `["break_done"]` |
+| `sound_volume` | Cue volume in percent of the desktop's volume scale, 5–100; the settings offer 20 to 100 and a button to test it |
 | `eye_breaks_enabled` | Show the eye-break card on a timer |
 | `eye_interval_seconds` | How often an eye card appears; 15, 20 or 30 minutes |
 | `muted_prompts` | Eye prompts to skip, from `far`, `shut` and `move` |
