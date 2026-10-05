@@ -161,6 +161,10 @@ During the break countdown:
   break countdown and can be repeated. `S` does the same.
 - **Skip this break** immediately starts a fresh work interval. `K` does the
   same.
+- **I already had my break** counts the break as taken and starts a fresh
+  work interval, for when you are just back from a break the reminder did
+  not see. It is offered on the warning before the break as well. `B` does
+  the same.
 
 At `00:00`, the popup changes to **Break complete** and shows
 **I'm back**. Work resumes when return is confirmed, with `Enter` or the
@@ -185,7 +189,7 @@ when it is read.
 | `show_countdown` | Show the countdown next to the top-bar icon |
 | `sound_enabled` | Master switch for every sound the application makes |
 | `muted_sounds` | Names of individual cues to silence, e.g. `["break_done"]` |
-| `sound_volume` | Cue volume in percent of the desktop's volume scale, 5–100; the settings offer 20 to 100 and a button to test it |
+| `sound_volume` | Cue volume in percent of the desktop's volume scale, 10–100 in steps of 10, with a button in the settings to test it |
 | `eye_breaks_enabled` | Show the eye-break card on a timer |
 | `eye_interval_seconds` | How often an eye card appears; 15, 20 or 30 minutes |
 | `muted_prompts` | Eye prompts to skip, from `far`, `shut` and `move` |

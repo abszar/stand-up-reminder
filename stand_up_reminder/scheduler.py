@@ -201,6 +201,21 @@ class Scheduler:
         self._begin_work()
         return Transition.END_BREAK
 
+    def already_had_break(self) -> Optional[Transition]:
+        """Take the user's word that the break has been had: start working.
+
+        Somebody back from a break the reminder did not see — away for less
+        than the idle credit, or on their feet with the machine still busy —
+        should not have to sit through the countdown to be believed. It
+        answers the warning and the running break alike, and unlike standing
+        it holds nothing: the fresh interval starts counting straight away.
+        """
+        self.advance()
+        if self.phase is not Phase.BREAK and not self._is_warning():
+            return None
+        self._begin_work()
+        return Transition.END_BREAK
+
     def reset_work_interval(self) -> bool:
         self.advance()
         if self.phase in (Phase.SNOOZED, Phase.BREAK, Phase.PAUSED):

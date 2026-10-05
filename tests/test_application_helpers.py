@@ -289,6 +289,49 @@ class SoundVolumeTests(unittest.TestCase):
         app._emit_sound.assert_called_once_with(cue)
 
 
+class AlreadyHadBreakTests(unittest.TestCase):
+    def make_app(self, transition, discreet=False):
+        app = SimpleNamespace(
+            scheduler=Mock(),
+            discreet=discreet,
+            window=Mock(),
+            _record_outcome=Mock(),
+            _play_sound=Mock(),
+            _close_card=Mock(),
+            _apply_transition=Mock(),
+            _update_interface=Mock(),
+        )
+        app.scheduler.already_had_break.return_value = transition
+        return app
+
+    def test_it_counts_the_break_and_sounds_the_fanfare(self):
+        app = self.make_app(Transition.END_BREAK)
+        application.ReminderApplication._already_had_break(app, None)
+        app._record_outcome.assert_called_once_with(application.BreakOutcome.TAKEN)
+        app._play_sound.assert_called_once_with(application.EYE_CUES["break_kept"])
+
+    def test_the_card_bursts_before_it_closes(self):
+        app = self.make_app(Transition.END_BREAK)
+        application.ReminderApplication._already_had_break(app, None)
+        app.window.play_confirm.assert_called_once()
+        app._close_card.assert_not_called()
+        app.window.play_confirm.call_args[0][0]()
+        app._close_card.assert_called_once_with(Transition.END_BREAK)
+
+    def test_the_dock_closes_straight_away(self):
+        app = self.make_app(Transition.END_BREAK, discreet=True)
+        application.ReminderApplication._already_had_break(app, None)
+        app.window.play_confirm.assert_not_called()
+        app._close_card.assert_called_once_with(Transition.END_BREAK)
+
+    def test_outside_a_break_nothing_is_counted(self):
+        app = self.make_app(None)
+        application.ReminderApplication._already_had_break(app, None)
+        app._record_outcome.assert_not_called()
+        app._play_sound.assert_not_called()
+        app._update_interface.assert_called_once_with()
+
+
 class ResetFromMenuTests(unittest.TestCase):
     def make_app(self, phase):
         app = SimpleNamespace(
@@ -753,8 +796,21 @@ class BreakViewTests(unittest.TestCase):
         view = application.break_view(Phase.BREAK, 75, 45)
         self.assertEqual(view.stand_label, "I'm standing — keep count")
 
+    def test_a_running_break_can_be_declared_already_had(self):
+        view = application.break_view(Phase.BREAK, 75, 45)
+        self.assertTrue(view.can_already)
+
+    def test_the_warning_can_be_declared_already_had(self):
+        view = application.break_view(Phase.WORK, 15, 0)
+        self.assertTrue(view.can_already)
+
+    def test_a_finished_break_has_its_own_way_back(self):
+        view = application.break_view(Phase.AWAITING_RETURN, 0, 90)
+        self.assertFalse(view.can_already)
+
     def test_snoozed_view_has_no_popup_actions(self):
         view = application.break_view(Phase.SNOOZED, 5 * 60, 0)
+        self.assertFalse(view.can_already)
         self.assertFalse(view.can_snooze)
         self.assertFalse(view.can_skip)
         self.assertFalse(view.can_return)
@@ -771,14 +827,16 @@ class StandingActionTests(unittest.TestCase):
 
 
 class BreakHintTests(unittest.TestCase):
-    def test_the_break_names_all_three_keys(self):
+    def test_the_break_names_all_four_keys(self):
         view = application.break_view(Phase.BREAK, 75, 45)
-        self.assertEqual(application.break_hint(view), "S SNOOZE · K SKIP · T STANDING")
+        self.assertEqual(
+            application.break_hint(view), "B HAD IT · S SNOOZE · K SKIP · T STANDING"
+        )
 
-    def test_the_warning_names_the_standing_key(self):
+    def test_the_warning_names_the_same_keys(self):
         view = application.break_view(Phase.WORK, 15, 0)
         self.assertEqual(
-            application.break_hint(view), "S SNOOZE · K SKIP · T STANDING"
+            application.break_hint(view), "B HAD IT · S SNOOZE · K SKIP · T STANDING"
         )
 
     def test_a_finished_break_confirms_or_stands(self):

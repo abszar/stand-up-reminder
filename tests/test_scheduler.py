@@ -487,6 +487,53 @@ class IdleCreditTests(SchedulerFixture):
         self.assertEqual(self.scheduler.snapshot().phase, Phase.PAUSED)
 
 
+class AlreadyHadBreakTests(SchedulerFixture):
+    def test_a_running_break_ends_and_a_fresh_interval_starts(self):
+        self.scheduler.start_break()
+        self.clocks.advance(1)
+
+        self.assertEqual(self.scheduler.already_had_break(), Transition.END_BREAK)
+
+        snapshot = self.scheduler.snapshot()
+        self.assertEqual(snapshot.phase, Phase.WORK)
+        self.assertEqual(snapshot.seconds_remaining, 30)
+
+    def test_the_warning_is_answered_the_same_way(self):
+        self.scheduler.set_durations(warning_seconds=10)
+        self.clocks.advance(20)
+        self.assertEqual(self.scheduler.advance(), Transition.WARN_BREAK)
+
+        self.assertEqual(self.scheduler.already_had_break(), Transition.END_BREAK)
+
+        snapshot = self.scheduler.snapshot()
+        self.assertEqual(snapshot.phase, Phase.WORK)
+        self.assertEqual(snapshot.seconds_remaining, 30)
+
+    def test_it_does_not_hold_the_interval_the_way_standing_does(self):
+        self.scheduler.start_break()
+        self.scheduler.already_had_break()
+        self.clocks.advance(5)
+        self.scheduler.advance()
+
+        self.assertEqual(self.scheduler.snapshot().seconds_remaining, 25)
+
+    def test_outside_a_break_it_changes_nothing(self):
+        self.clocks.advance(20)
+
+        self.assertIsNone(self.scheduler.already_had_break())
+
+        snapshot = self.scheduler.snapshot()
+        self.assertEqual(snapshot.phase, Phase.WORK)
+        self.assertEqual(snapshot.seconds_remaining, 10)
+
+    def test_a_snoozed_break_is_left_alone(self):
+        self.scheduler.start_break()
+        self.scheduler.snooze_break()
+
+        self.assertIsNone(self.scheduler.already_had_break())
+        self.assertEqual(self.scheduler.snapshot().phase, Phase.SNOOZED)
+
+
 class StandUpTests(SchedulerFixture):
     def test_standing_during_a_break_starts_a_fresh_work_interval(self):
         self.scheduler.start_break()

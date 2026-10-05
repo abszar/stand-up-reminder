@@ -390,6 +390,8 @@ class BreakView:
     can_miss: bool = False
     can_stand: bool = False
     stand_label: str = ""
+    # Back from a break the reminder never saw, and believed on their word.
+    can_already: bool = False
     title_color: str = PALETTE["bone"]
 
 
@@ -411,6 +413,7 @@ def break_view(phase: Phase, seconds_remaining: int, away_seconds: int) -> Break
             # There is no count to keep yet, so the action says what it is.
             can_stand=True,
             stand_label=_("I'm already standing"),
+            can_already=True,
         )
     active = phase is Phase.BREAK
     awaiting = phase is Phase.AWAITING_RETURN
@@ -431,6 +434,8 @@ def break_view(phase: Phase, seconds_remaining: int, away_seconds: int) -> Break
         # and once it is over and waiting to be confirmed.
         can_stand=active or awaiting,
         stand_label=_("I'm standing — keep count"),
+        # Once the break is over, I'm back says the same thing.
+        can_already=active,
         title_color=PALETTE["mint"] if awaiting else PALETTE["bone"],
     )
 
@@ -443,6 +448,8 @@ def break_hint(view: BreakView) -> str:
         keys = [_("S SNOOZE"), _("K SKIP")]
     else:
         keys = []
+    if view.can_already:
+        keys.insert(0, _("B HAD IT"))
     if view.can_stand:
         keys.append(_("T STANDING"))
     return " · ".join(keys)
@@ -1269,7 +1276,9 @@ class DockCard(Gtk.Window, ui.PixelFrameWindow):
     EDGE_GAP = ap(3)
     SLIDE = (ap(9), ap(6), ap(3), 0)
 
-    def __init__(self, on_snooze, on_skip, on_return, on_miss, on_stand) -> None:
+    def __init__(
+        self, on_snooze, on_skip, on_return, on_miss, on_stand, on_already
+    ) -> None:
         super().__init__(type=Gtk.WindowType.TOPLEVEL, title=APP_NAME)
         self._phase = Phase.BREAK
         self.break_seconds = 2 * 60
@@ -1317,6 +1326,8 @@ class DockCard(Gtk.Window, ui.PixelFrameWindow):
         self.stand_button.connect("clicked", on_stand)
         self.return_button = ui.pixel_button(_("I'M BACK"), "primary")
         self.return_button.connect("clicked", on_return)
+        self.already_button = ui.pixel_button(_("HAD MY BREAK"), "primary")
+        self.already_button.connect("clicked", on_already)
         self.snooze_button = ui.pixel_button(_("+%d MIN") % 5)
         self.snooze_button.connect("clicked", on_snooze)
         self.skip_button = ui.pixel_button(_("SKIP"))
@@ -1326,6 +1337,7 @@ class DockCard(Gtk.Window, ui.PixelFrameWindow):
         for button in (
             self.stand_button,
             self.return_button,
+            self.already_button,
             self.snooze_button,
             self.skip_button,
             self.miss_button,
@@ -1363,6 +1375,7 @@ class DockCard(Gtk.Window, ui.PixelFrameWindow):
         self.progress.set_filled(pixels.filled_cells(seconds_remaining, total))
         self.stand_button.set_visible(view.can_stand and not view.can_return)
         self.return_button.set_visible(view.can_return)
+        self.already_button.set_visible(view.can_already)
         self.snooze_button.set_visible(view.can_snooze)
         self.skip_button.set_visible(view.can_skip)
         self.miss_button.set_visible(view.can_miss)
@@ -1643,6 +1656,7 @@ class BreakWindow(Gtk.ApplicationWindow, ui.PixelFrameWindow):
         on_return,
         on_miss,
         on_stand,
+        on_already,
         wayland: bool = False,
     ) -> None:
         super().__init__(application=application, title=_("Time to stand up"))
@@ -1709,6 +1723,12 @@ class BreakWindow(Gtk.ApplicationWindow, ui.PixelFrameWindow):
         first_row_overlay.add_overlay(self.burst)
         first_row_overlay.set_overlay_pass_through(self.burst, True)
         card.pack_start(first_row_overlay, False, False, 0)
+
+        self.already_button = ui.pixel_button(_("I already had my break"), "primary")
+        self.already_button.set_no_show_all(True)
+        self.already_button.set_margin_top(ap(2))
+        self.already_button.connect("clicked", on_already)
+        card.pack_start(self.already_button, False, False, 0)
 
         self.second_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=ap(2))
         self.second_row.set_margin_top(ap(2))
@@ -1809,6 +1829,12 @@ class BreakWindow(Gtk.ApplicationWindow, ui.PixelFrameWindow):
         ):
             self.skip_button.clicked()
             return True
+        if self.already_button.get_visible() and event.keyval in (
+            Gdk.KEY_b,
+            Gdk.KEY_B,
+        ):
+            self.already_button.clicked()
+            return True
         if event.keyval in (Gdk.KEY_t, Gdk.KEY_T):
             for button in (self.stand_button, self.stand_small):
                 if button.get_visible():
@@ -1843,6 +1869,7 @@ class BreakWindow(Gtk.ApplicationWindow, ui.PixelFrameWindow):
         self.snooze_button.set_visible(view.can_snooze)
         self.skip_button.set_visible(view.can_skip)
         self.return_button.set_visible(view.can_return)
+        self.already_button.set_visible(view.can_already)
         self.miss_button.set_visible(view.can_miss)
         if view.stand_label:
             ui.set_button_label(self.stand_button, view.stand_label)
@@ -2283,10 +2310,12 @@ class SettingsPanel(Gtk.Window, ui.PixelFrameWindow):
             False,
             0,
         )
+        # Ten steps do not fit across the panel, so they wrap into two rows.
         volume = self._segmented(
             "sound_volume",
             [("%d%%" % percent, percent) for percent in VOLUME_PRESETS],
             settings.sound_volume,
+            per_row=5,
         )
         volume.set_margin_start(ap(6))
         volume.set_margin_top(ap(2))
@@ -2435,18 +2464,24 @@ class SettingsPanel(Gtk.Window, ui.PixelFrameWindow):
         row.pack_start(label, False, False, 0)
         return row
 
-    def _segmented(self, key: str, choices, active) -> Gtk.Box:
-        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=ap(2))
-        row.set_homogeneous(True)
+    def _segmented(self, key: str, choices, active, per_row: int = 0) -> Gtk.Box:
+        """One choice out of several; past `per_row` of them it wraps."""
+        choices = list(choices)
+        per_row = per_row or len(choices)
+        rows = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=ap(2))
         self._segments[key] = []
-        for label, value in choices:
-            button = Gtk.Button(label=label)
-            button.get_style_context().add_class("pixel-segment")
-            button.connect("clicked", self._segment_clicked, key, value)
-            row.pack_start(button, True, True, 0)
-            self._segments[key].append((button, value))
+        for start in range(0, len(choices), per_row):
+            row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=ap(2))
+            row.set_homogeneous(True)
+            for label, value in choices[start:start + per_row]:
+                button = Gtk.Button(label=label)
+                button.get_style_context().add_class("pixel-segment")
+                button.connect("clicked", self._segment_clicked, key, value)
+                row.pack_start(button, True, True, 0)
+                self._segments[key].append((button, value))
+            rows.pack_start(row, False, False, 0)
         self._select(key, active)
-        return row
+        return rows
 
     def _select(self, key: str, active) -> None:
         for button, value in self._segments.get(key, []):
@@ -2794,6 +2829,7 @@ class ReminderApplication(Gtk.Application):
             self._confirm_return,
             self._missed_break,
             self._stand_up,
+            self._already_had_break,
             wayland=self._wayland,
         )
         self.window.set_snooze_seconds(int(snooze_seconds))
@@ -3163,6 +3199,7 @@ class ReminderApplication(Gtk.Application):
                 self._confirm_return,
                 self._missed_break,
                 self._stand_up,
+                self._already_had_break,
             )
         self.dock.set_snooze_seconds(int(self.scheduler.snooze_seconds))
         self.dock.set_break_seconds(int(self.scheduler.break_seconds))
@@ -3384,6 +3421,18 @@ class ReminderApplication(Gtk.Application):
             self._update_interface()
             return
         self._apply_transition(transition)
+        self._update_interface()
+
+    def _already_had_break(self, _button) -> None:
+        """Count a break the reminder never saw, and start the next interval."""
+        transition = self.scheduler.already_had_break()
+        if transition is Transition.END_BREAK:
+            self._record_outcome(BreakOutcome.TAKEN)
+            self._play_sound(EYE_CUES["break_kept"])
+            if self.discreet:
+                self._close_card(transition)
+                return
+            self.window.play_confirm(lambda: self._close_card(transition))
         self._update_interface()
 
     def _missed_break(self, _button) -> None:

@@ -6,10 +6,17 @@ All notable changes to Stand Up Reminder are documented in this file.
 
 ### Added
 
+- **I already had my break.** Back from a break the reminder did not see —
+  away for less than the idle credit, so it never counted — you could only
+  sit through the two-minute count or wait for *I'm back* to appear. The
+  warning and the running break now offer *I already had my break* (key `B`,
+  and *HAD MY BREAK* on the discreet card): the break is recorded as taken
+  and a fresh work interval starts at once. Unlike *I'm standing* it opens no
+  pill and holds nothing.
 - **A volume for the sound cues, and a button to try it.** The cues played at
   full level, and square waves carry further than their level suggests, so
-  they were too loud. The settings now offer 20 to 100 percent under *Play
-  sounds*, starting at 40, with *Test the volume* playing the break's knock at
+  they were too loud. The settings now offer 10 to 100 percent in steps of
+  ten under *Play sounds*, starting at 40, with *Test the volume* playing the break's knock at
   the chosen level — even when that cue is muted on its own. The percentage is
   on the desktop's own volume scale, so 40 here means what 40 means on the
   volume slider.

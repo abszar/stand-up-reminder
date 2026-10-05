@@ -36,9 +36,9 @@ IDLE_CREDIT_PRESETS = (5 * 60, 10 * 60, 15 * 60, 30 * 60)
 # Cue volume as a percentage of the sound server's own scale, the one the
 # desktop's volume slider shows. The cues are square waves and carry further
 # than their level suggests, so they start well below full.
-VOLUME_PRESETS = (20, 40, 60, 80, 100)
+VOLUME_PRESETS = tuple(range(10, 101, 10))
 DEFAULT_SOUND_VOLUME = 40
-SOUND_VOLUME_RANGE = (5, 100)
+SOUND_VOLUME_RANGE = (10, 100)
 
 
 @dataclass(frozen=True)

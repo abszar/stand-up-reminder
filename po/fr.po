@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Stand Up Reminder 1.2.0\n"
 "Report-Msgid-Bugs-To: https://github.com/abszar/stand-up-reminder/issues\n"
-"POT-Creation-Date: 2026-10-05 08:57+0200\n"
+"POT-Creation-Date: 2026-10-05 09:05+0200\n"
 "PO-Revision-Date: 2026-07-20 23:40+0200\n"
 "Last-Translator: Automatically generated\n"
 "Language-Team: none\n"
@@ -127,6 +127,10 @@ msgid "K SKIP"
 msgstr "K IGNORER"
 
 #: stand_up_reminder/application.py
+msgid "B HAD IT"
+msgstr "B PAUSE FAITE"
+
+#: stand_up_reminder/application.py
 msgid "T STANDING"
 msgstr "T DEBOUT"
 
@@ -194,6 +198,10 @@ msgid "I'M BACK"
 msgstr "JE SUIS DE RETOUR"
 
 #: stand_up_reminder/application.py
+msgid "HAD MY BREAK"
+msgstr "PAUSE FAITE"
+
+#: stand_up_reminder/application.py
 #, python-format
 msgid "+%d MIN"
 msgstr "+%d MIN"
@@ -213,6 +221,10 @@ msgstr "Il est temps de se lever"
 #: stand_up_reminder/application.py
 msgid "I'm back"
 msgstr "Je suis de retour"
+
+#: stand_up_reminder/application.py
+msgid "I already had my break"
+msgstr "J'ai déjà fait ma pause"
 
 #: stand_up_reminder/application.py
 msgid "5 more min"

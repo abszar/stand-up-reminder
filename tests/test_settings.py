@@ -223,6 +223,9 @@ class EyeRotationTests(unittest.TestCase):
 
 
 class SoundVolumeTests(unittest.TestCase):
+    def test_the_volume_moves_in_steps_of_ten(self):
+        self.assertEqual(VOLUME_PRESETS, tuple(range(10, 101, 10)))
+
     def test_sounds_start_well_below_full_volume(self):
         self.assertLess(Settings().sound_volume, 100)
         self.assertIn(Settings().sound_volume, VOLUME_PRESETS)
