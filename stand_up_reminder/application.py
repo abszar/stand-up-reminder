@@ -1565,81 +1565,6 @@ class EdgeGlow:
         self._strips = []
 
 
-class DimmerWindow(Gtk.Window):
-    """A scanlined cover for the monitors that are not showing the card."""
-
-    BANDS = 6
-
-    def __init__(self) -> None:
-        super().__init__(type=Gtk.WindowType.TOPLEVEL)
-        ui.keep_above(self)
-        # Every other window that helper dresses is the size of its own
-        # content; this one is the size of a monitor, so it takes its
-        # resizing back, and paints every pixel it covers itself rather than
-        # letting the desktop theme paint a grey rectangle underneath.
-        self.set_resizable(True)
-        self.set_app_paintable(True)
-        self.set_accept_focus(False)
-        self.set_type_hint(Gdk.WindowTypeHint.SPLASHSCREEN)
-        self._bands = self.BANDS
-        self.connect("draw", self._on_draw)
-        self.connect("delete-event", lambda *_args: True)
-
-    def cover_monitor(self, monitor_index: int) -> None:
-        """Take the whole of a monitor, then wipe down it.
-
-        The window is given the monitor's work area the way the glow strips
-        are given theirs, and only shown once it has it. Asking to be
-        fullscreened instead left it at its default size in the top left
-        corner of the monitor it was meant to cover: a window this shape is
-        a splash, so that it never lands in the switcher, and a splash is
-        not a window the desktop will fullscreen. The work area rather than
-        the whole monitor because a cover taller than that is shoved up the
-        screen until it fits, and the panels it would have covered are drawn
-        over it in any case.
-        """
-        display = Gdk.Display.get_default()
-        monitor = display.get_monitor(monitor_index) if display else None
-        if monitor is None:
-            return
-        area = monitor.get_workarea()
-        self.resize(area.width, area.height)
-        self.move(area.x, area.y)
-        self.show_all()
-        self._wipe_down()
-
-    def _wipe_down(self) -> None:
-        if not ui.animations_enabled():
-            self._bands = self.BANDS
-            self.queue_draw()
-            return
-        self._bands = 0
-        self.queue_draw()
-
-        def step() -> bool:
-            self._bands += 1
-            self.queue_draw()
-            return (
-                GLib.SOURCE_CONTINUE if self._bands < self.BANDS else GLib.SOURCE_REMOVE
-            )
-
-        GLib.timeout_add(40, step)
-
-    def _on_draw(self, _widget, context) -> bool:
-        width = self.get_allocated_width()
-        height = self.get_allocated_height()
-        band = height / self.BANDS
-        covered = height if self._bands >= self.BANDS else int(band * self._bands)
-        context.set_source_rgb(*pixels.rgb(PALETTE["void"]))
-        context.rectangle(0, 0, width, covered)
-        context.fill()
-        context.set_source_rgb(*pixels.rgb(PALETTE["ink"]))
-        for y in range(0, covered, 2 * ART):
-            context.rectangle(0, y, width, ART)
-        context.fill()
-        return False
-
-
 class BreakWindow(Gtk.ApplicationWindow, ui.PixelFrameWindow):
     """The card that interrupts you: clock, bar, prompt, actions, day track."""
 
@@ -2722,7 +2647,6 @@ class ReminderApplication(Gtk.Application):
         self.countdown_item = None
         self.sound_item = None
         self.idle_item = None
-        self._dimmers: list = []
         self._settings_store: Optional[SettingsStore] = None
         self._session_bus = None
         self._lock_subscription = 0
@@ -2918,7 +2842,6 @@ class ReminderApplication(Gtk.Application):
         if self.discreet:
             if self.eye_card is not None:
                 self.eye_card.finish()
-            self._hide_dimmers()
         # A break already on screen moves to the other surface rather than
         # waiting for the next one.
         snapshot = self.scheduler.snapshot()
@@ -2933,7 +2856,6 @@ class ReminderApplication(Gtk.Application):
             self.window.stop_clock()
         if self.dock is not None:
             self.dock.hide()
-        self._hide_dimmers()
 
     def _open_control_window(self, _item) -> None:
         if self.control_window is None:
@@ -3044,7 +2966,6 @@ class ReminderApplication(Gtk.Application):
         transition = self.scheduler.set_locked(locked)
         if locked and self.window:
             self.window.hide()
-            self._hide_dimmers()
         self._apply_transition(transition)
         if (
             not locked
@@ -3186,12 +3107,9 @@ class ReminderApplication(Gtk.Application):
         self.window.show_all()
         self.window.enforce_front()
         self.window.reveal()
-        # The break window has to be realized before GDK can report which
-        # monitor it landed on.
-        self._show_dimmers()
 
     def _show_dock(self, snapshot) -> None:
-        """The break, docked in the corner: no dimmer, no focus, no fanfare."""
+        """The break, docked in the corner: no focus, no fanfare."""
         if self.dock is None:
             self.dock = DockCard(
                 self._snooze_break,
@@ -3216,47 +3134,6 @@ class ReminderApplication(Gtk.Application):
         _x, top = self.pill.get_position()
         width, height = self.pill.get_size()
         return top, top + height, width
-
-    def _show_dimmers(self) -> None:
-        """Cover the monitors that do not hold the break card."""
-        display = Gdk.Display.get_default()
-        gdk_window = self.window.get_window() if self.window else None
-        if display is None or gdk_window is None:
-            return
-        try:
-            monitor_count = display.get_n_monitors()
-            if monitor_count < 2:
-                return
-            active_index = self._monitor_index(display, gdk_window, monitor_count)
-            while len(self._dimmers) < monitor_count:
-                self._dimmers.append(DimmerWindow())
-            for index, dimmer in enumerate(self._dimmers):
-                if index >= monitor_count or index == active_index:
-                    dimmer.hide()
-                    continue
-                dimmer.cover_monitor(index)
-        except Exception as error:  # pragma: no cover - display layouts vary
-            print(
-                f"stand-up-reminder: could not dim other monitors: {error}",
-                file=sys.stderr,
-            )
-
-    @staticmethod
-    def _monitor_index(display, gdk_window, monitor_count: int) -> int:
-        """Index of the monitor holding the break window, by geometry."""
-        active = display.get_monitor_at_window(gdk_window)
-        if active is None:
-            return 0
-        geometry = active.get_geometry()
-        for index in range(monitor_count):
-            candidate = display.get_monitor(index).get_geometry()
-            if (candidate.x, candidate.y) == (geometry.x, geometry.y):
-                return index
-        return 0
-
-    def _hide_dimmers(self) -> None:
-        for dimmer in self._dimmers:
-            dimmer.hide()
 
     def _update_interface(self) -> None:
         snapshot = self.scheduler.snapshot()
@@ -3319,7 +3196,6 @@ class ReminderApplication(Gtk.Application):
             else:
                 self.window.hide()
                 self.window.stop_clock()
-                self._hide_dimmers()
 
         self._refresh_dock()
         self._refresh_standing_pill()
@@ -3646,8 +3522,6 @@ class ReminderApplication(Gtk.Application):
     def _quit_cleanly(self, _item) -> None:
         if self.indicator:
             self.indicator.set_status(AyatanaAppIndicator3.IndicatorStatus.PASSIVE)
-        for dimmer in self._dimmers:
-            dimmer.destroy()
         if self.pill:
             self.pill.destroy()
         if self.glow:

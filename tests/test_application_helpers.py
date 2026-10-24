@@ -460,7 +460,7 @@ class DiscreetModeTests(unittest.TestCase):
                 app._show_dock.assert_not_called()
                 app.window.show_all.assert_not_called()
 
-    def test_the_full_card_still_dims_the_screen(self):
+    def test_the_full_card_keeps_other_screens_usable(self):
         app = SimpleNamespace(
             scheduler=Mock(),
             discreet=False,
@@ -474,7 +474,11 @@ class DiscreetModeTests(unittest.TestCase):
         )
         application.ReminderApplication._show_break(app)
         app._show_dock.assert_not_called()
-        app._show_dimmers.assert_called_once_with()
+        app._show_dimmers.assert_not_called()
+        app.window.update_state.assert_called_once_with(Phase.BREAK, 90, 0)
+        app.window.show_all.assert_called_once_with()
+        app.window.enforce_front.assert_called_once_with()
+        app.window.reveal.assert_called_once_with()
 
 
 class EyeClockTests(unittest.TestCase):

@@ -29,7 +29,7 @@ The cycle it runs:
    counting down to it, offering the same actions as the break itself.
 3. **Break** — the card takes over: a 2-minute countdown, an instruction to
    stand up and move, and the actions *snooze*, *skip*, and *I'm standing*.
-   Other monitors are dimmed while it shows.
+   Other monitors remain uncovered and usable while it shows.
 4. **Break complete** — the card waits for the user to confirm they came back,
    with *I'm back* and *I didn't take this break*.
 5. Each break ends in one of five recorded outcomes — **taken, away, missed,
@@ -125,13 +125,7 @@ A monochrome symbolic icon that sits in the GNOME top bar at 16 px (and 24 px
 on HiDPI), next to a short text countdown like "24:00". It must read at 16 px
 in a single colour and stay legible against both light and dark panels.
 
-### 5. Dimmer overlay
-While the break card shows, every other monitor is covered by a full-screen
-dark overlay. Today it is a flat dark fill. It can carry texture — scanlines,
-dither, a repeating motif — as long as it stays dark enough to push the other
-screens back and cheap enough to redraw full-screen.
-
-### 6. Top-bar dropdown menu (text and glyphs only)
+### 5. Top-bar dropdown menu (text and glyphs only)
 Clicking the indicator opens a menu drawn by GNOME Shell itself, which the
 application cannot style. What *can* be designed is the wording and any block
 or arrow glyphs inside the labels. The items, in order:
@@ -225,7 +219,7 @@ top-bar menu items.
 4. **Screen specs** — for each surface and each of its states: overall size,
    the full layout in art pixels (spacing, sizes, borders, alignment), and an
    image or precise wireframe of the finished screen. Break card × 3 states,
-   standing pill, statistics window, dimmer, plus the control panel if you
+   standing pill, statistics window, plus the control panel if you
    decide it earns its place.
 5. **Component specs** — window frame and border, buttons in all five states,
    the progress bar (cell count, filled / empty / urgent), timeline marks in

@@ -4,6 +4,11 @@ All notable changes to Stand Up Reminder are documented in this file.
 
 ## [Unreleased]
 
+### Removed
+
+- Covers on other monitors during a standing break. The reminder pop-up and
+  countdown remain visible while the other screens stay usable.
+
 ### Added
 
 - **I already had my break.** Back from a break the reminder did not see —

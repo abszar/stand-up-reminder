@@ -56,7 +56,7 @@ carry urgency, success and failure always stay.
   the distance, which is the part with the clearest evidence behind it.
 - **Discreet mode**, a switch in the top-bar menu for when somebody else is
   watching your screen. The break moves to a small card in the bottom right
-  corner, the dimmer is dropped, eye cards are held back and the application
+  corner, eye cards are held back and the application
   goes silent. It changes no setting and resets to normal when the
   application restarts.
 - Chiptune sound cues shipped with the application: a call when the break
@@ -64,8 +64,7 @@ carry urgency, success and failure always stay.
   eye prompt. A master switch silences everything; each cue also has a row
   of its own.
 - Keyboard shortcuts.
-- Other monitors dim while the break window is showing (except in Discreet
-  mode).
+- Other monitors remain usable while the break pop-up and countdown are showing.
 - Active-time or wall-clock handling for lock and suspend periods.
 - Automatic startup at graphical login.
 - English and French interface text.
